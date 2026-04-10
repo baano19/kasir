@@ -1,0 +1,224 @@
+<?php include "includes/db.php"; checkLogin();
+
+// Update Zona Waktu
+date_default_timezone_set('Asia/Jakarta');
+
+$role = $_SESSION["role"]; $uid = $_SESSION["user_id"];
+
+// --- 1. LOGIC SIMPAN TRANSAKSI ---
+if(isset($_POST["add"])){ 
+    $waktu_sekarang = date('Y-m-d H:i:s'); 
+    $target_uid = $_POST["target_uid"]; 
+    $st = $db->prepare("INSERT INTO transactions (user_id, service_name, amount, created_at) VALUES (?,?,?,?)"); 
+    $st->execute([$target_uid, $_POST["s_name"], $_POST["s_price"], $waktu_sekarang]); 
+    header("Location: transactions.php"); exit(); 
+}
+
+// --- 2. LOGIC UPDATE & DELETE (Admin Only) ---
+if(isset($_POST["update_t"]) && $role == "admin"){ 
+    $st = $db->prepare("UPDATE transactions SET service_name=?, amount=? WHERE id=?"); 
+    $st->execute([$_POST["edit_service"], $_POST["edit_amount"], $_POST["t_id"]]); 
+    header("Location: transactions.php"); exit(); 
+}
+if(isset($_POST["delete_t"]) && $role == "admin"){ 
+    $st = $db->prepare("DELETE FROM transactions WHERE id=?"); 
+    $st->execute([$_POST["t_id"]]); header("Location: transactions.php"); exit(); 
+}
+
+// --- 3. AMBIL DATA CAPSTER (Taruh luar agar bisa diakses semua role untuk filter/pagination) ---
+$bs = $db->query("SELECT id, name FROM users WHERE role='barber' ORDER BY name ASC")->fetchAll();
+
+// --- 4. LOGIC FILTER & PAGINATION ---
+$limit = 10; 
+$page = (int)($_GET["page"] ?? 1); 
+$off = ($page - 1) * $limit;
+$where = []; $p = []; 
+
+if($role == "barber"){ 
+    $where[] = "t.user_id=?"; $p[] = $uid; 
+} else { 
+    if(!empty($_GET["f_b"])){ $where[] = "t.user_id=?"; $p[] = $_GET["f_b"]; } 
+    if(!empty($_GET["f_d"])){ $where[] = "date(t.created_at)=?"; $p[] = $_GET["f_d"]; } 
+}
+$w_sql = count($where) ? "WHERE ".implode(" AND ", $where) : "";
+
+// Hitung Total Halaman (PENTING: Di luar if agar pagination muncul di Capster)
+$total_data = $db->prepare("SELECT COUNT(*) FROM transactions t $w_sql");
+$total_data->execute($p);
+$t_rows = $total_data->fetchColumn();
+$t_pages = ceil($t_rows / $limit);
+
+// Ambil List Transaksi
+$logs = $db->prepare("SELECT t.*, u.name as b_name FROM transactions t JOIN users u ON t.user_id=u.id $w_sql ORDER BY t.id DESC LIMIT $limit OFFSET $off");
+$logs->execute($p); 
+$list = $logs->fetchAll();
+
+// Parameter URL untuk Link Pagination
+$url_params = "";
+if(!empty($_GET['f_b'])) $url_params .= "&f_b=" . $_GET['f_b'];
+if(!empty($_GET['f_d'])) $url_params .= "&f_d=" . $_GET['f_d'];
+?>
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="assets/style.css?v=<?=time()?>">
+    <title>Transaksi BPOS</title>
+</head>
+<body>
+
+<div class="mobile-header">
+    <span style="color:var(--primary); font-weight:bold;">BPOS</span>
+    <button class="burger-btn" onclick="toggleMenu()">☰</button>
+</div>
+
+<div class="sidebar" id="sidebar">
+    <h2>BPOS</h2>
+    <a href="dashboard.php">Dashboard</a>
+    <a href="transactions.php" class="active">Transaksi</a>
+    <?php if($role=="admin") echo "<a href='settings.php'>Settings</a>"; ?>
+    <a href="logout.php" class="logout-link">Logout</a>
+</div>
+
+<div class="content">
+    <h1>Data Transaksi</h1>
+    
+    <div class="card" style="border-left-color: var(--primary);">
+        <h3 style="margin-top:0;">Input Transaksi Baru</h3>
+        <form method="POST" style="display: flex; flex-direction: column; gap: 12px;">
+            <?php if($role == "admin"): ?>
+                <select name="target_uid" required style="width:100%!important; margin:0!important; box-sizing:border-box!important;">
+                    <option value="">-- Pilih Capster --</option>
+                    <?php foreach($bs as $b) echo "<option value='{$b['id']}'>{$b['name']}</option>"; ?>
+                </select>
+            <?php else: ?>
+                <input type="hidden" name="target_uid" value="<?= $uid ?>">
+            <?php endif; ?>
+
+            <select name="s_name" onchange="document.getElementById('pr').value=this.options[this.selectedIndex].getAttribute('data-p')" required style="width:100%!important; margin:0!important; box-sizing:border-box!important;">
+                <option value="">-- Pilih Layanan --</option>
+                <?php $sv=$db->query("SELECT * FROM services")->fetchAll(); foreach($sv as $s) echo "<option value='{$s['name']}' data-p='{$s['price']}'>{$s['name']}</option>"; ?>
+            </select>
+            <input type="number" name="s_price" id="pr" placeholder="Harga" readonly style="width:100%!important; margin:0!important; box-sizing:border-box!important;">
+            <button name="add" style="margin:0!important; padding:10px!important;">Simpan Transaksi</button>
+        </form>
+    </div>
+
+    <?php if($role == "admin"): ?>
+    <div class="card" style="background: #1a1a1a; border-left: 4px solid orange; overflow: hidden; padding: 15px !important;">
+        <h3 style="margin-top:0; color: orange; font-size: 1.1rem;">Filter Data</h3>
+        
+        <form method="GET" style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
+            
+            <div style="width: 100%; position: relative;">
+                <select name="f_b" style="width: 100% !important; height: 42px; border-radius: 8px; background: #252525; color: white; border: 1px solid #444; padding: 0 10px;">
+                    <option value="">Semua Capster</option>
+                    <?php foreach($bs as $b) { 
+                        $sel = (isset($_GET['f_b']) && $_GET['f_b'] == $b['id']) ? 'selected' : '';
+                        echo "<option value='{$b['id']}' $sel>{$b['name']}</option>"; 
+                    } ?>
+                </select>
+            </div>
+
+            <div style="width: 100%; max-width: 100%; overflow: hidden; display: block;">
+                <input type="date" name="f_d" value="<?= $_GET['f_d'] ?? '' ?>" 
+                    style="
+                        width: 100% !important; 
+                        max-width: 100% !important; 
+                        height: 42px !important; 
+                        box-sizing: border-box !important; 
+                        display: block !important;
+                        -webkit-appearance: none !important; 
+                        background: #252525 !important; 
+                        color: white !important; 
+                        border: 1px solid #444 !important; 
+                        border-radius: 8px !important; 
+                        padding: 0 10px !important;
+                        margin: 0 !important;
+                    ">
+            </div>
+
+            <div style="width: 100%;">
+                <button type="submit" style="background:orange !important; color: white !important; width: 100% !important; height: 42px; font-weight: bold; border-radius: 8px; border: none; cursor: pointer;">
+                    Cari Data
+                </button>
+            </div>
+        </form>
+    </div>
+    <?php endif; ?>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>No.</th>
+                    <?php if($role=="admin") echo "<th>Barber</th>"; ?>
+                    <th>Service</th>
+                    <th>Gross</th>
+                    <th>Net (50%)</th>
+                    <th>Jam</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php $no=$off+1; foreach($list as $l): $is_ed=($role=='admin' && ($_GET['edit_id']??'')==$l['id']); ?>
+                <tr>
+                    <form method="POST">
+                    <input type="hidden" name="t_id" value="<?=$l['id']?>">
+                    <td><?=$no++?></td>
+                    <?php if($role=="admin") echo "<td>{$l['b_name']}</td>"; ?>
+                    <td><?= $is_ed ? "<input type='text' name='edit_service' value='{$l['service_name']}' style='width:80px'>" : $l['service_name'] ?></td>
+                    <td><?= $is_ed ? "<input type='number' name='edit_amount' value='{$l['amount']}' style='width:80px'>" : "Rp ".number_format($l['amount']) ?></td>
+                    <td style="color:var(--accent); font-weight:bold;">Rp <?=number_format($l['amount']*0.5)?></td>
+                    <td>
+                        <?php if($role=="admin"): ?>
+                            <?php if($is_ed): ?>
+                                <button name="update_t" style="background: var(--accent) !important; padding: 5px 10px !important;">OK</button>
+                                <a href="transactions.php" style="color: #ccc; margin-left: 5px; text-decoration: none;">X</a>
+                            <?php else: ?>
+                                <a href="?edit_id=<?=$l['id']?>&page=<?=$page?><?=$url_params?>" style="color:var(--primary); text-decoration: none; font-size: 0.9rem;">Edit</a> 
+                                <span style="color: #444;">|</span>
+                                <button name="delete_t" onclick="return confirm('Hapus?')" style="background: #ff4d4d !important; color: white !important; border: none !important; padding: 6px 12px !important; border-radius: 6px !important; cursor: pointer !important; margin-left: 5px !important; display: inline-block !important; width: auto !important;">Del</button>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <?= substr($l['created_at'],11,5) ?>
+                        <?php endif; ?>
+                    </td>
+                    </form>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+
+    <?php if($t_pages > 1): ?>
+    <div class="pagination" style="display: flex; justify-content: center; align-items: center; gap: 5px; margin-top: 20px;">
+        <?php if($page > 1): ?>
+            <a href="?page=<?= $page-1 ?><?= $url_params ?>">&laquo; Prev</a>
+        <?php endif; ?>
+
+        <?php for($i=1; $i<=$t_pages; $i++): $act = ($page == $i) ? 'active' : ''; ?>
+            <a href="?page=<?= $i . $url_params ?>" class="<?= $act ?>"><?= $i ?></a>
+        <?php endfor; ?>
+
+        <?php if($page < $t_pages): ?>
+            <a href="?page=<?= $page+1 ?><?= $url_params ?>">&raquo; Next</a>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+
+</div>
+
+<script>
+function toggleMenu() { document.getElementById('sidebar').classList.toggle('active'); }
+document.addEventListener('click', function(event) {
+    var sidebar = document.getElementById('sidebar');
+    var burger = document.querySelector('.burger-btn');
+    if (sidebar.classList.contains('active') && !sidebar.contains(event.target) && !burger.contains(event.target)) {
+        sidebar.classList.remove('active');
+    }
+});
+</script>
+</body>
+</html>
+

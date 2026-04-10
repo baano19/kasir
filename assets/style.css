@@ -1,0 +1,86 @@
+* {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+input, button, select {
+    font-family: inherit;
+}
+
+:root { 
+    --bg: #121212; --card: #1e1e1e; --primary: #bb86fc; 
+    --text: #e0e0e0; --accent: #03dac6; --danger: #cf6679; 
+}
+
+/* RESET */
+a { text-decoration: none !important; }
+
+body { 
+    font-family: "Segoe UI", sans-serif; background: var(--bg); color: var(--text); 
+    margin: 0; display: flex; min-height: 100vh; overflow-x: hidden;
+}
+
+/* HEADER MOBILE (BURGER BAR FIXED) */
+.mobile-header {
+    display: none; position: fixed; top: 0; left: 0; right: 0;
+    background: #1a1a1a; padding: 15px 20px; z-index: 1100; border-bottom: 1px solid #333;
+    justify-content: space-between; align-items: center;
+}
+/* Paksa tombol burger transparan & gak gendut */
+.burger-btn { 
+    background: transparent !important; border: none !important; 
+    color: var(--primary) !important; font-size: 2rem !important; 
+    cursor: pointer !important; width: auto !important; padding: 0 !important; 
+}
+
+/* SIDEBAR */
+.sidebar { width: 240px; background: var(--card); padding: 20px; border-right: 1px solid #333; flex-shrink: 0; transition: left 0.3s ease; z-index: 1200; }
+.sidebar h2 { color: var(--primary); margin-bottom: 30px; margin-top: 0; }
+.sidebar a { display: block; color: #fff !important; padding: 12px; border-radius: 8px; margin-bottom: 10px; }
+.sidebar a.active { background: var(--primary) !important; color: #000 !important; font-weight: bold; }
+
+/* CONTENT */
+.content { flex-grow: 1; padding: 30px; width: 100%; box-sizing: border-box; }
+
+/* CARDS & TABLES */
+.card { background: var(--card); padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 5px solid var(--primary); }
+.table-container { width: 100%; overflow-x: auto; background: var(--card); border-radius: 12px; }
+table { width: 100%; border-collapse: collapse; min-width: 700px; }
+th, td { padding: 12px; text-align: left; border-bottom: 1px solid #333; }
+th { background: #252525; color: var(--primary); font-size: 0.85rem; }
+
+/* FIX INPUT PUTIH */
+input, select, textarea { 
+    width: 100% !important; background-color: #252525 !important; 
+    color: #fff !important; border: 1px solid #444 !important; 
+    padding: 10px !important; border-radius: 8px !important; margin: 5px 0 !important;
+}
+
+/* TOMBOL */
+button { background: var(--primary) !important; color: #000 !important; font-weight: bold !important; padding: 10px 20px !important; border-radius: 8px !important; cursor: pointer; border: none !important; width: auto !important; }
+.btn-edit { background: var(--accent) !important; color: #000 !important; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 0.8rem; }
+.btn-cancel { background: #444 !important; color: #fff !important; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; }
+
+/* PAGINATION */
+.pagination { display: flex !important; gap: 8px !important; margin-top: 30px !important; justify-content: center !important; align-items: center !important; }
+.pagination a, .pagination span { padding: 10px 18px !important; background: #252525 !important; color: #fff !important; border-radius: 8px !important; border: 1px solid #444 !important; font-weight: bold !important; }
+.pagination a.active { background: var(--primary) !important; color: #000 !important; border-color: var(--primary) !important; }
+.pagination .disabled { opacity: 0.3 !important; cursor: not-allowed !important; }
+
+/* PAKSA WARNA MERAH UNTUK DELETE & LOGOUT */
+.sidebar a.logout-link { color: var(--danger) !important; font-weight: bold; }
+.sidebar a.logout-link:hover { background: var(--danger) !important; color: #fff !important; }
+button.del, .btn-del { background-color: var(--danger) !important; color: white !important; border: none !important; padding: 6px 12px !important; border-radius: 6px !important; font-weight: bold !important; cursor: pointer; }
+button.del:hover { opacity: 0.8; }
+
+/* TABS (SUB-MENU SETTINGS) */
+.tabs { display: flex !important; gap: 10px !important; margin-bottom: 25px !important; border-bottom: 1px solid #333 !important; padding-bottom: 15px !important; overflow-x: auto; }
+.tabs a { padding: 10px 20px !important; color: #fff !important; border-radius: 8px !important; background: #2a2a2a !important; font-size: 0.9rem !important; display: inline-block !important; white-space: nowrap; }
+.tabs a.active { background: var(--primary) !important; color: #000 !important; font-weight: bold !important; }
+
+/* RESPONSIVE KHUSUS HP (TUTUP KEBOCORAN SIDEBAR) */
+@media (max-width: 768px) {
+    .mobile-header { display: flex; }
+    .sidebar { position: fixed; left: -100%; top: 0; bottom: 0; width: 250px; box-shadow: 2px 0 15px rgba(0,0,0,0.5); }
+    .sidebar.active { left: 0; }
+    .content { padding: 90px 15px 15px 15px; }
+}
