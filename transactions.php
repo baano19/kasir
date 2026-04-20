@@ -36,24 +36,19 @@ $where = []; $p = [];
 
 $start_date = "";
 $end_date = "";
-$date_range_val = "";
 
 if($role == "barber"){ 
     // Filter khusus Capster
     $where[] = "t.user_id=?"; $p[] = $uid; 
     
-    if(isset($_GET['date_range'])) {
-        $date_range_val = trim($_GET['date_range']);
-        if(!empty($date_range_val)) {
-            $dates = explode(" to ", $date_range_val);
-            $start_date = $dates[0];
-            $end_date = isset($dates[1]) ? $dates[1] : $dates[0];
-        }
+    // Cek request tanggal
+    if(isset($_GET['start_date']) && $_GET['start_date'] != "") {
+        $start_date = $_GET["start_date"];
+        $end_date = $_GET["end_date"];
     } else {
         // Default load: Hari ini
         $start_date = date('Y-m-d');
         $end_date = date('Y-m-d');
-        $date_range_val = $start_date; 
     }
 
     if(!empty($start_date)) {
@@ -64,9 +59,7 @@ if($role == "barber"){
     }
 
     // Label buat di kotak ringkasan Gross
-    if(empty($start_date) && empty($end_date)) {
-        $date_label = "Semua Waktu";
-    } else if($start_date == $end_date) {
+    if($start_date == $end_date) {
         $date_label = date('d M Y', strtotime($start_date));
     } else {
         $date_label = date('d M', strtotime($start_date)) . " - " . date('d M', strtotime($end_date));
@@ -104,7 +97,8 @@ $list = $logs->fetchAll();
 $url_params = "";
 if(!empty($_GET['f_b'])) $url_params .= "&f_b=" . $_GET['f_b'];
 if(!empty($_GET['f_d'])) $url_params .= "&f_d=" . $_GET['f_d'];
-if(isset($_GET['date_range'])) $url_params .= "&date_range=" . urlencode($_GET['date_range']);
+if(isset($_GET['start_date'])) $url_params .= "&start_date=" . $_GET['start_date'];
+if(isset($_GET['end_date'])) $url_params .= "&end_date=" . $_GET['end_date'];
 ?>
 
 <!DOCTYPE html>
@@ -112,8 +106,6 @@ if(isset($_GET['date_range'])) $url_params .= "&date_range=" . urlencode($_GET['
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="assets/style.css?v=<?=time()?>">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
     <title>Transaksi BPOS</title>
 </head>
 <body>
@@ -182,12 +174,26 @@ if(isset($_GET['date_range'])) $url_params .= "&date_range=" . urlencode($_GET['
     <?php if($role == "barber"): ?>
     <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
         
-        <div class="card" style="background: #252525; border-left-color: #4CAF50; margin: 0; padding: 12px 15px;">
-            <form method="GET" id="form-filter-capster" style="display: flex; align-items: center; gap: 10px; margin: 0;">
-                <label style="font-size: 0.85rem; color: #ccc; white-space: nowrap;">Pilih Tanggal:</label>
-                <div style="width: 100%; position: relative;">
-                    <input type="text" id="date_range_picker" name="date_range" value="<?= htmlspecialchars($date_range_val) ?>" placeholder="Semua Waktu" 
-                        style="width: 100% !important; height: 40px !important; margin: 0 !important; padding: 0 15px !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; border-radius: 6px; box-sizing: border-box !important; cursor: pointer; text-align: left; font-size: 15px;">
+        <div class="card" style="background: #252525; border-left-color: #4CAF50; margin: 0; padding: 15px;">
+            <form method="GET" style="display: flex; flex-direction: column; gap: 12px; margin: 0;">
+                
+                <div style="display: flex; gap: 10px; width: 100%;">
+                    <div style="flex: 1; min-width: 0;">
+                        <label style="font-size: 0.75rem; color: #ccc; margin-bottom: 5px; display: block;">Dari Tanggal</label>
+                        <input type="date" name="start_date" value="<?= $start_date ?>" required
+                            style="width: 100% !important; height: 40px !important; margin: 0 !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; border-radius: 6px; box-sizing: border-box !important; padding: 0 10px !important; -webkit-appearance: none !important;">
+                    </div>
+                    
+                    <div style="flex: 1; min-width: 0;">
+                        <label style="font-size: 0.75rem; color: #ccc; margin-bottom: 5px; display: block;">Sampai Tanggal</label>
+                        <input type="date" name="end_date" value="<?= $end_date ?>" required
+                            style="width: 100% !important; height: 40px !important; margin: 0 !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; border-radius: 6px; box-sizing: border-box !important; padding: 0 10px !important; -webkit-appearance: none !important;">
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" style="flex: 2; height: 40px; background: #4CAF50; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">Tampilkan</button>
+                    <a href="transactions.php" style="flex: 1; display: flex; align-items: center; justify-content: center; height: 40px; background: #444; color: white; text-decoration: none; border-radius: 6px; font-size: 0.85rem; box-sizing: border-box;">Reset</a>
                 </div>
             </form>
         </div>
@@ -266,55 +272,7 @@ if(isset($_GET['date_range'])) $url_params .= "&date_range=" . urlencode($_GET['
 
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
-    if(document.getElementById("date_range_picker")) {
-        flatpickr("#date_range_picker", {
-            mode: "range",
-            dateFormat: "Y-m-d",
-            altInput: true,
-            altFormat: "d M Y", 
-            disableMobile: "true", 
-            
-            // Auto submit saat kalender ditutup
-            onClose: function(selectedDates, dateStr, instance) {
-                // Submit form otomatis kalau user udah milih (atau abis pencet Hari Ini/Clear)
-                document.getElementById("form-filter-capster").submit();
-            },
-            
-            // Tambahin tombol "Hari Ini" dan "Clear" di dalam kalender
-            onReady: function(selectedDates, dateStr, instance) {
-                const btnContainer = document.createElement("div");
-                btnContainer.style.cssText = "display: flex; gap: 5px; padding: 10px; background: #252525; border-radius: 0 0 5px 5px; border-top: 1px solid #444;";
-
-                // Tombol HARI INI
-                const btnToday = document.createElement("button");
-                btnToday.innerHTML = "Hari Ini";
-                btnToday.style.cssText = "flex: 1; padding: 8px; background: var(--primary); color: white; border: none; cursor: pointer; font-weight: bold; font-size: 14px; border-radius: 4px;";
-                btnToday.type = "button";
-                btnToday.addEventListener("click", function() {
-                    const today = new Date();
-                    instance.setDate([today, today]); // Set ke hari ini
-                    instance.close(); // Tutup & trigger auto-submit
-                });
-
-                // Tombol CLEAR
-                const btnClear = document.createElement("button");
-                btnClear.innerHTML = "Clear";
-                btnClear.style.cssText = "flex: 1; padding: 8px; background: #ff4d4d; color: white; border: none; cursor: pointer; font-weight: bold; font-size: 14px; border-radius: 4px;";
-                btnClear.type = "button";
-                btnClear.addEventListener("click", function() {
-                    instance.clear(); // Hapus tanggal
-                    instance.close(); // Tutup & trigger auto-submit
-                });
-                
-                btnContainer.appendChild(btnToday);
-                btnContainer.appendChild(btnClear);
-                instance.calendarContainer.appendChild(btnContainer);
-            }
-        });
-    }
-
     function toggleMenu() { document.getElementById('sidebar').classList.toggle('active'); }
     document.addEventListener('click', function(event) {
         var sidebar = document.getElementById('sidebar');
