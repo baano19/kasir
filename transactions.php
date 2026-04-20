@@ -174,26 +174,26 @@ if(isset($_GET['end_date'])) $url_params .= "&end_date=" . $_GET['end_date'];
     <?php if($role == "barber"): ?>
     <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
         
-        <div class="card" style="background: #252525; border-left-color: #4CAF50; margin: 0; padding: 15px;">
-            <form method="GET" style="display: flex; flex-direction: column; gap: 12px; margin: 0;">
+        <div class="card" style="background: #252525; border-left-color: var(--primary); margin: 0; padding: 10px 15px;">
+            <form method="GET" style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0;">
                 
-                <div style="display: flex; gap: 10px; width: 100%;">
-                    <div style="flex: 1; min-width: 0;">
-                        <label style="font-size: 0.75rem; color: #ccc; margin-bottom: 5px; display: block;">Dari Tanggal</label>
-                        <input type="date" name="start_date" value="<?= $start_date ?>" required
-                            style="width: 100% !important; height: 40px !important; margin: 0 !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; border-radius: 6px; box-sizing: border-box !important; padding: 0 10px !important; -webkit-appearance: none !important;">
-                    </div>
-                    
-                    <div style="flex: 1; min-width: 0;">
-                        <label style="font-size: 0.75rem; color: #ccc; margin-bottom: 5px; display: block;">Sampai Tanggal</label>
-                        <input type="date" name="end_date" value="<?= $end_date ?>" required
-                            style="width: 100% !important; height: 40px !important; margin: 0 !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; border-radius: 6px; box-sizing: border-box !important; padding: 0 10px !important; -webkit-appearance: none !important;">
-                    </div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <label style="font-size: 0.75rem; color: #aaa; white-space: nowrap;">Dari</label>
+                    <input type="date" name="start_date" value="<?= $start_date ?>" required
+                        style="width: 130px !important; height: 32px !important; margin: 0 !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; border-radius: 4px; box-sizing: border-box !important; padding: 0 5px !important; font-size: 0.8rem !important; -webkit-appearance: none !important;">
+                </div>
+                
+                <span style="color: #666;">-</span>
+
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <label style="font-size: 0.75rem; color: #aaa; white-space: nowrap;">Sampai</label>
+                    <input type="date" name="end_date" value="<?= $end_date ?>" required
+                        style="width: 130px !important; height: 32px !important; margin: 0 !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; border-radius: 4px; box-sizing: border-box !important; padding: 0 5px !important; font-size: 0.8rem !important; -webkit-appearance: none !important;">
                 </div>
 
-                <div style="display: flex; gap: 10px;">
-                    <button type="submit" style="flex: 2; height: 40px; background: #4CAF50; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">Tampilkan</button>
-                    <a href="transactions.php" style="flex: 1; display: flex; align-items: center; justify-content: center; height: 40px; background: #444; color: white; text-decoration: none; border-radius: 6px; font-size: 0.85rem; box-sizing: border-box;">Reset</a>
+                <div style="display: flex; gap: 5px; flex-grow: 1; justify-content: flex-end;">
+                    <button type="submit" style="height: 32px; padding: 0 15px; background: var(--primary); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.75rem;">Tampilkan</button>
+                    <a href="transactions.php" style="display: flex; align-items: center; justify-content: center; height: 32px; padding: 0 15px; background: #444; color: white; text-decoration: none; border-radius: 4px; font-size: 0.75rem; box-sizing: border-box;">Reset</a>
                 </div>
             </form>
         </div>
@@ -203,9 +203,9 @@ if(isset($_GET['end_date'])) $url_params .= "&end_date=" . $_GET['end_date'];
                 <span style="font-size: 0.75rem; opacity: 0.7;">Gross (<?= $date_label ?>)</span>
                 <div style="font-weight: bold; color: #fff; font-size: 1.1rem;">Rp <?= number_format($total_gross) ?></div>
             </div>
-            <div style="background: #252525; padding: 10px 15px; border-radius: 8px; border: 1px solid #4CAF50; flex: 1; min-width: 140px;">
+            <div style="background: #252525; padding: 10px 15px; border-radius: 8px; border: 1px solid var(--primary); flex: 1; min-width: 140px;">
                 <span style="font-size: 0.75rem; opacity: 0.7;">Pendapatan Bersih</span>
-                <div style="font-weight: bold; color: #4CAF50; font-size: 1.1rem;">Rp <?= number_format($total_net) ?></div>
+                <div style="font-weight: bold; color: var(--primary); font-size: 1.1rem;">Rp <?= number_format($total_net) ?></div>
             </div>
         </div>
     </div>
@@ -220,7 +220,7 @@ if(isset($_GET['end_date'])) $url_params .= "&end_date=" . $_GET['end_date'];
                     <th>Service</th>
                     <th>Gross</th>
                     <th>Net (50%)</th>
-                    <th>Jam</th>
+                    <th style="white-space: nowrap;"><?= $role == "admin" ? "Aksi" : "Waktu" ?></th>
                 </tr>
             </thead>
             <tbody>
@@ -233,7 +233,8 @@ if(isset($_GET['end_date'])) $url_params .= "&end_date=" . $_GET['end_date'];
                     <td><?= $is_ed ? "<input type='text' name='edit_service' value='{$l['service_name']}' style='width:80px'>" : $l['service_name'] ?></td>
                     <td><?= $is_ed ? "<input type='number' name='edit_amount' value='{$l['amount']}' style='width:80px'>" : "Rp ".number_format($l['amount']) ?></td>
                     <td style="color:var(--accent); font-weight:bold;">Rp <?=number_format($l['amount']*0.5)?></td>
-                    <td>
+                    
+                    <td style="font-size: 0.8rem; white-space: nowrap;">
                         <?php if($role=="admin"): ?>
                             <?php if($is_ed): ?>
                                 <button name="update_t" style="background: var(--accent) !important; padding: 5px 10px !important;">OK</button>
@@ -244,7 +245,7 @@ if(isset($_GET['end_date'])) $url_params .= "&end_date=" . $_GET['end_date'];
                                 <button name="delete_t" onclick="return confirm('Hapus?')" style="background: #ff4d4d !important; color: white !important; border: none !important; padding: 6px 12px !important; border-radius: 6px !important; cursor: pointer !important; margin-left: 5px !important; display: inline-block !important; width: auto !important;">Del</button>
                             <?php endif; ?>
                         <?php else: ?>
-                            <?= substr($l['created_at'],11,5) ?>
+                            <?= date('d M, h:i A', strtotime($l['created_at'])) ?>
                         <?php endif; ?>
                     </td>
                     </form>
