@@ -28,17 +28,44 @@ if(isset($_POST["delete_t"]) && $role == "admin"){
 // --- 3. AMBIL DATA CAPSTER ---
 $bs = $db->query("SELECT id, name FROM users WHERE role='barber' ORDER BY name ASC")->fetchAll();
 
-// --- 4. LOGIC FILTER HARIAN & PAGINATION ---
+// --- 4. LOGIC FILTER & PAGINATION ---
 $limit = 10; 
 $page = (int)($_GET["page"] ?? 1); 
 $off = ($page - 1) * $limit;
 $where = []; $p = []; 
 
+$start_date = "";
+$end_date = "";
+
 if($role == "barber"){ 
-    // Filter khusus Capster: Punya dia sendiri DAN tanggal tertentu (Default hari ini)
+    // Filter khusus Capster: Punya dia sendiri
     $where[] = "t.user_id=?"; $p[] = $uid; 
-    $selected_date = $_GET["f_d"] ?? date('Y-m-d');
-    $where[] = "date(t.created_at)=?"; $p[] = $selected_date;
+    
+    // Cek apakah ada request tanggal, kalau tidak default ke hari ini
+    if(isset($_GET['start_date'])) {
+        $start_date = $_GET["start_date"];
+        $end_date = $_GET["end_date"];
+    } else {
+        $start_date = date('Y-m-d');
+        $end_date = date('Y-m-d');
+    }
+
+    if(!empty($start_date)) {
+        $where[] = "date(t.created_at) >= ?"; $p[] = $start_date;
+    }
+    if(!empty($end_date)) {
+        $where[] = "date(t.created_at) <= ?"; $p[] = $end_date;
+    }
+
+    // Label buat di kotak ringkasan Gross
+    if(empty($start_date) && empty($end_date)) {
+        $date_label = "Semua Waktu";
+    } else if($start_date == $end_date) {
+        $date_label = date('d M Y', strtotime($start_date));
+    } else {
+        $date_label = date('d M', strtotime($start_date)) . " - " . date('d M', strtotime($end_date));
+    }
+
 } else { 
     // Filter Admin: Sesuai yang dipilih di form
     if(!empty($_GET["f_b"])){ $where[] = "t.user_id=?"; $p[] = $_GET["f_b"]; } 
@@ -71,6 +98,8 @@ $list = $logs->fetchAll();
 $url_params = "";
 if(!empty($_GET['f_b'])) $url_params .= "&f_b=" . $_GET['f_b'];
 if(!empty($_GET['f_d'])) $url_params .= "&f_d=" . $_GET['f_d'];
+if(isset($_GET['start_date'])) $url_params .= "&start_date=" . $_GET['start_date'];
+if(isset($_GET['end_date'])) $url_params .= "&end_date=" . $_GET['end_date'];
 ?>
 
 <!DOCTYPE html>
@@ -144,28 +173,40 @@ if(!empty($_GET['f_d'])) $url_params .= "&f_d=" . $_GET['f_d'];
     <?php endif; ?>
 
     <?php if($role == "barber"): ?>
-    <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; align-items: center;">
+    <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
         
-        <div class="card" style="background: #252525; border-left-color: #4CAF50; margin: 0; padding: 12px 15px; flex: 1; min-width: 250px;">
-            <form method="GET" style="display: flex; align-items: center; gap: 10px; margin: 0;">
-                <label style="font-size: 0.85rem; color: #ccc;">Lihat Hari:</label>
-                <div style="overflow: hidden; border-radius: 6px;">
-                    <input type="date" name="f_d" value="<?= $selected_date ?>" onchange="this.form.submit()" 
-                        style="width: 140px !important; height: 35px !important; margin: 0 !important; padding: 0 10px !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; -webkit-appearance: none !important; box-sizing: border-box !important;">
+        <div class="card" style="background: #252525; border-left-color: #4CAF50; margin: 0; padding: 12px 15px;">
+            <form method="GET" style="display: flex; align-items: center; gap: 10px; margin: 0; flex-wrap: wrap;">
+                
+                <div style="display: flex; align-items: center; gap: 5px;">
+                    <label style="font-size: 0.85rem; color: #ccc;">Dari:</label>
+                    <input type="date" name="start_date" value="<?= $start_date ?>" 
+                        style="width: 130px !important; height: 35px !important; margin: 0 !important; padding: 0 5px !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; -webkit-appearance: none !important; box-sizing: border-box !important; border-radius: 6px;">
                 </div>
-                <?php if($selected_date !== date('Y-m-d')): ?>
-                    <a href="transactions.php" style="font-size: 0.8rem; color: #4CAF50; text-decoration: none; font-weight: bold;">(Hari Ini)</a>
-                <?php endif; ?>
+                
+                <div style="display: flex; align-items: center; gap: 5px;">
+                    <label style="font-size: 0.85rem; color: #ccc;">Sampai:</label>
+                    <input type="date" name="end_date" value="<?= $end_date ?>" 
+                        style="width: 130px !important; height: 35px !important; margin: 0 !important; padding: 0 5px !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; -webkit-appearance: none !important; box-sizing: border-box !important; border-radius: 6px;">
+                </div>
+                
+                <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                    <button type="submit" style="padding: 0 15px; height: 35px; background: #4CAF50; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: bold; margin: 0 !important;">Cari</button>
+                    
+                    <a href="transactions.php" style="display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; height: 35px; background: #444; color: white; text-decoration: none; border-radius: 6px; font-size: 0.8rem; box-sizing: border-box;">Hari Ini</a>
+                    
+                    <a href="transactions.php?start_date=&end_date=" style="display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; height: 35px; background: transparent; color: #ff4d4d; border: 1px solid #ff4d4d; text-decoration: none; border-radius: 6px; font-size: 0.8rem; box-sizing: border-box;">Clear</a>
+                </div>
             </form>
         </div>
 
-        <div style="display: flex; gap: 10px; flex: 1; min-width: 250px;">
-            <div style="background: #252525; padding: 10px 15px; border-radius: 8px; border: 1px solid #444; flex: 1;">
-                <span style="font-size: 0.75rem; opacity: 0.7;">Gross (<?= date('d M', strtotime($selected_date)) ?>)</span>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <div style="background: #252525; padding: 10px 15px; border-radius: 8px; border: 1px solid #444; flex: 1; min-width: 140px;">
+                <span style="font-size: 0.75rem; opacity: 0.7;">Gross (<?= $date_label ?>)</span>
                 <div style="font-weight: bold; color: #fff; font-size: 1.1rem;">Rp <?= number_format($total_gross) ?></div>
             </div>
-            <div style="background: #252525; padding: 10px 15px; border-radius: 8px; border: 1px solid #4CAF50; flex: 1;">
-                <span style="font-size: 0.75rem; opacity: 0.7;">Jatah Lo</span>
+            <div style="background: #252525; padding: 10px 15px; border-radius: 8px; border: 1px solid #4CAF50; flex: 1; min-width: 140px;">
+                <span style="font-size: 0.75rem; opacity: 0.7;">Pendapatan Bersih</span>
                 <div style="font-weight: bold; color: #4CAF50; font-size: 1.1rem;">Rp <?= number_format($total_net) ?></div>
             </div>
         </div>
