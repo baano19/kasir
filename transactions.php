@@ -5,6 +5,18 @@ date_default_timezone_set('Asia/Jakarta');
 
 $role = $_SESSION["role"]; $uid = $_SESSION["user_id"];
 
+// --- LOGIC KLAIM UANG MAKAN (HANYA BARBER) ---
+if(isset($_POST["claim_meal"]) && $role == "barber"){
+    $tgl_skrg = date('Y-m-d');
+    $cek = $db->prepare("SELECT COUNT(*) FROM expenses WHERE user_id=? AND category='Makan' AND date(created_at)=?");
+    $cek->execute([$uid, $tgl_skrg]);
+    if($cek->fetchColumn() == 0){
+        $st = $db->prepare("INSERT INTO expenses (user_id, category, amount, notes, created_at) VALUES (?,?,?,?,?)");
+        $st->execute([$uid, 'Makan', 30000, 'Uang Makan Harian', date('Y-m-d H:i:s')]);
+        header("Location: transactions.php"); exit();
+    }
+}
+
 // --- 1. LOGIC SIMPAN TRANSAKSI ---
 if(isset($_POST["add"])){ 
     $waktu_sekarang = date('Y-m-d H:i:s'); 
@@ -126,6 +138,21 @@ if(isset($_GET['end_date'])) $url_params .= "&end_date=" . $_GET['end_date'];
 <div class="content">
     <h1>Data Transaksi</h1>
     
+    <?php if($role == "barber"): 
+        $cek_makan = $db->prepare("SELECT COUNT(*) FROM expenses WHERE user_id=? AND category='Makan' AND date(created_at)=?");
+        $cek_makan->execute([$uid, date('Y-m-d')]);
+        $sdh_makan = $cek_makan->fetchColumn();
+    ?>
+    <div class="card" style="border-left-color: orange; background: #252525; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <span style="font-size: 0.9rem;">Uang Makan Hari Ini: <b><?= $sdh_makan ? "✅ Sudah Diambil" : "❌ Belum Diambil" ?></b></span>
+            <?php if(!$sdh_makan): ?>
+                <form method="POST"><button name="claim_meal" style="background: orange !important; width: auto !important; padding: 5px 15px !important; font-size: 0.8rem; margin: 0 !important;">Ambil Rp 30.000</button></form>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="card" style="border-left-color: var(--primary);">
         <h3 style="margin-top:0;">Input Transaksi Baru</h3>
         <form method="POST" style="display: flex; flex-direction: column; gap: 12px;">
