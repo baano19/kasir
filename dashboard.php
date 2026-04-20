@@ -9,18 +9,138 @@ if(isset($_POST["add_expense"]) && $role == 'admin'){
     header("Location: dashboard.php"); exit();
 }
 
-// --- 1. LOGIKA EXPORT EXCEL ---
+// --- 1. LOGIKA EXPORT EXCEL (CLEAN & CLEAR FORMAT) ---
 if (isset($_GET['export']) && $_GET['export'] == 'excel' && $role == 'admin') {
     $start = $_GET['start']; $end = $_GET['end'];
-    $q = $db->prepare("SELECT date(t.created_at) as tgl, u.name, COUNT(t.id) as cust, SUM(t.amount) as gross FROM transactions t JOIN users u ON t.user_id = u.id WHERE u.role = 'barber' AND date(t.created_at) >= ? AND date(t.created_at) <= ? GROUP BY date(t.created_at), u.id ORDER BY date(t.created_at) DESC, u.name ASC");
-    $q->execute([$start, $end]);
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="Rekap_Capster_' . $start . '_sd_' . $end . '.csv"');
-    $output = fopen('php://output', 'w');
-    fputcsv($output, array('Tanggal', 'Nama Capster', 'Total Customer', 'Pendapatan Kotor (Rp)', 'Pendapatan Bersih 50% (Rp)'));
-    foreach ($q->fetchAll() as $row) { fputcsv($output, array($row['tgl'], $row['name'], $row['cust'], $row['gross'] ?: 0, ($row['gross']*0.5))); }
-    fclose($output); exit();
+
+    // Paksa browser download sebagai file Excel (.xls)
+    header("Content-Type: application/vnd.ms-excel");
+    header("Content-Disposition: attachment; filename=Rekap_BPOS_" . $start . "_sd_" . $end . ".xls");
+    header("Pragma: no-cache");
+    header("Expires: 0");
+
+    global $db;
+    
+    // Ambil semua daftar layanan dari database (Biar kolomnya dinamis)
+    $srv_query = $db->query("SELECT name FROM services ORDER BY id ASC")->fetchAll();
+    $services = [];
+    foreach($srv_query as $s) $services[] = $s['name'];
+
+    // Mulai bikin Tabel Excel
+    echo "<table border='1' cellpadding='5'>";
+    
+    $total_cols = count($services) + 4; // Nama Capster + (Jumlah Service) + Total Cust + Kotor + Bersih
+    
+    // Header Utama
+    echo "<tr><th colspan='$total_cols' style='font-size:16px; background-color:#eeeeee; padding:10px;'>LAPORAN TRANSAKSI BPOS (" . date('d M Y', strtotime($start)) . " - " . date('d M Y', strtotime($end)) . ")</th></tr>";
+    echo "<tr><td colspan='$total_cols' style='border:none; height:10px;'></td></tr>";
+
+    $grand_total_gross = 0;
+    $total_cust_all = 0;
+
+    // Cari tanggal berapa aja yang ada transaksinya
+    $dates_query = $db->prepare("SELECT DISTINCT date(created_at) as tgl FROM transactions WHERE date(created_at) >= ? AND date(created_at) <= ? ORDER BY tgl ASC");
+    $dates_query->execute([$start, $end]);
+    $dates = $dates_query->fetchAll();
+
+    if(count($dates) == 0) {
+        echo "<tr><td colspan='$total_cols' align='center'>Tidak ada data transaksi di periode ini.</td></tr>";
+    } else {
+        foreach($dates as $d) {
+            $tgl = $d['tgl'];
+            
+            // Baris Tanggal (Pemisah)
+            echo "<tr style='background-color:#d9ead3;'><td colspan='$total_cols'><b>Tanggal: " . date('d M Y', strtotime($tgl)) . "</b></td></tr>";
+            
+            // Header Kolom Tabel (Muncul ditiap bawah tanggal biar jelas)
+            echo "<tr style='font-weight:bold; background-color:#f2f2f2; text-align:center;'>";
+            echo "<td>Nama Capster</td>";
+            foreach($services as $srv) echo "<td>$srv</td>";
+            echo "<td>Total Cust</td>";
+            echo "<td>Kotor (Rp)</td>";
+            echo "<td>Bersih 50% (Rp)</td>";
+            echo "</tr>";
+
+            // Ambil data per Capster di hari tersebut
+            $capsters = $db->query("SELECT id, name FROM users WHERE role='barber' ORDER BY name ASC")->fetchAll();
+            
+            foreach($capsters as $c) {
+                $cid = $c['id'];
+                
+                // Cek total transaksi si capster di hari itu
+                $cek_tr = $db->prepare("SELECT COUNT(id) as cust, SUM(amount) as gross FROM transactions WHERE user_id=? AND date(created_at)=?");
+                $cek_tr->execute([$cid, $tgl]);
+                $tr_data = $cek_tr->fetch();
+                
+                // Kalau dia nyukur hari itu, baru ditampilin
+                if($tr_data['cust'] > 0) {
+                    $gross = $tr_data['gross'];
+                    $grand_total_gross += $gross; 
+                    $total_cust_all += $tr_data['cust'];
+                    $bersih = $gross * 0.5;
+                    
+                    echo "<tr style='text-align:center;'>";
+                    echo "<td style='text-align:left;'>{$c['name']}</td>";
+                    
+                    // Hitung rincian per service
+                    foreach($services as $srv) {
+                        $cek_srv = $db->prepare("SELECT COUNT(id) FROM transactions WHERE user_id=? AND service_name=? AND date(created_at)=?");
+                        $cek_srv->execute([$cid, $srv, $tgl]);
+                        $jml_srv = $cek_srv->fetchColumn();
+                        echo "<td>" . ($jml_srv > 0 ? $jml_srv : "-") . "</td>";
+                    }
+                    
+                    echo "<td>{$tr_data['cust']}</td>";
+                    echo "<td align='right'>" . number_format($gross) . "</td>";
+                    echo "<td align='right' style='color:#0000ff;'>" . number_format($bersih) . "</td>";
+                    echo "</tr>";
+                }
+            }
+            // Kasih jarak kosong antar hari
+            echo "<tr><td colspan='$total_cols' style='border:none; height:15px;'></td></tr>"; 
+        }
+    }
+
+    // --- BAGIAN REKAPITULASI (TOTAL SEMUA) ---
+    // Hitung total pengeluaran (Makan + Operasional)
+    $exp_q = $db->prepare("SELECT SUM(amount) FROM expenses WHERE date(created_at) >= ? AND date(created_at) <= ?");
+    $exp_q->execute([$start, $end]);
+    $total_exp = $exp_q->fetchColumn() ?: 0;
+
+    $kotor_admin = $grand_total_gross * 0.5; 
+    $bersih_admin = $kotor_admin - $total_exp;
+
+    // 1. Baris Total Semua Transaksi
+    echo "<tr><td colspan='$total_cols' style='border-top:2px solid #000;'></td></tr>";
+    echo "<tr>
+            <td colspan='2' style='font-weight:bold;'>TOTAL SEMUA TRANSAKSI</td>
+            <td colspan='" . (count($services)) . "'></td>
+            <td align='center'><b>$total_cust_all Cust</b></td>
+            <td align='right'><b>" . number_format($grand_total_gross) . "</b></td>
+            <td align='right' style='color:#0000ff;'><b>" . number_format($grand_total_gross * 0.5) . "</b></td>
+          </tr>";
+
+    echo "<tr><td colspan='$total_cols' style='border:none; height:20px;'></td></tr>";
+    
+    // 2. Tabel Ringkasan Owner
+    echo "<tr>
+            <td colspan='2' rowspan='4' valign='top' style='font-size:16px;'><b>REKAP OWNER:</b></td>
+            <td colspan='2' style='font-weight:bold;'>Total Jatah Kotor Admin (50%)</td>
+            <td align='right'>Rp " . number_format($kotor_admin) . "</td>
+          </tr>";
+    echo "<tr>
+            <td colspan='2' style='font-weight:bold;'>Total Pengeluaran (Makan + Operasional)</td>
+            <td align='right' style='color:red;'>- Rp " . number_format($total_exp) . "</td>
+          </tr>";
+    echo "<tr>
+            <td colspan='2' style='font-weight:bold; font-size:14px; background-color:#c9daf8;'>PENDAPATAN BERSIH OWNER</td>
+            <td align='right' style='font-weight:bold; font-size:14px; background-color:#c9daf8;'>Rp " . number_format($bersih_admin) . "</td>
+          </tr>";
+
+    echo "</table>";
+    exit(); 
 }
+// ---------------------------------------------
 
 // --- 2. LOGIKA FILTER WAKTU ---
 $filter = $_GET['filter'] ?? 'today';
