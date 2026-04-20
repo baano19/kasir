@@ -174,26 +174,22 @@ if(isset($_GET['end_date'])) $url_params .= "&end_date=" . $_GET['end_date'];
     <?php if($role == "barber"): ?>
     <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
         
-        <div class="card" style="background: #252525; border-left-color: var(--primary); margin: 0; padding: 10px 15px;">
+        <div class="card" style="background: #252525; border-left-color: var(--primary); margin: 0; padding: 12px;">
             <form method="GET" style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0;">
                 
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    <label style="font-size: 0.75rem; color: #aaa; white-space: nowrap;">Dari</label>
+                <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 200px;">
                     <input type="date" name="start_date" value="<?= $start_date ?>" required
-                        style="width: 130px !important; height: 32px !important; margin: 0 !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; border-radius: 4px; box-sizing: border-box !important; padding: 0 5px !important; font-size: 0.8rem !important; -webkit-appearance: none !important;">
-                </div>
-                
-                <span style="color: #666;">-</span>
+                        style="flex: 1; min-width: 0; height: 36px !important; margin: 0 !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; border-radius: 6px; box-sizing: border-box !important; padding: 0 8px !important; font-size: 0.85rem !important; -webkit-appearance: none !important;">
+                    
+                    <span style="color: #888; font-weight: bold;">-</span>
 
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    <label style="font-size: 0.75rem; color: #aaa; white-space: nowrap;">Sampai</label>
                     <input type="date" name="end_date" value="<?= $end_date ?>" required
-                        style="width: 130px !important; height: 32px !important; margin: 0 !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; border-radius: 4px; box-sizing: border-box !important; padding: 0 5px !important; font-size: 0.8rem !important; -webkit-appearance: none !important;">
+                        style="flex: 1; min-width: 0; height: 36px !important; margin: 0 !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; border-radius: 6px; box-sizing: border-box !important; padding: 0 8px !important; font-size: 0.85rem !important; -webkit-appearance: none !important;">
                 </div>
 
-                <div style="display: flex; gap: 5px; flex-grow: 1; justify-content: flex-end;">
-                    <button type="submit" style="height: 32px; padding: 0 15px; background: var(--primary); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.75rem;">Tampilkan</button>
-                    <a href="transactions.php" style="display: flex; align-items: center; justify-content: center; height: 32px; padding: 0 15px; background: #444; color: white; text-decoration: none; border-radius: 4px; font-size: 0.75rem; box-sizing: border-box;">Reset</a>
+                <div style="display: flex; gap: 8px;">
+                    <button type="submit" style="height: 36px; padding: 0 15px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.85rem; box-sizing: border-box;">Tampilkan</button>
+                    <a href="transactions.php" style="display: flex; align-items: center; justify-content: center; height: 36px; padding: 0 15px; background: #444; color: white; text-decoration: none; border-radius: 6px; font-size: 0.85rem; box-sizing: border-box;">Reset</a>
                 </div>
             </form>
         </div>
