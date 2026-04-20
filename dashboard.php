@@ -272,11 +272,23 @@ new Chart(document.getElementById("chart"),{
         ]
     },
     options:{
-        responsive: true, maintainAspectRatio: false, plugins:{legend:{labels:{color:"white"}}},
+        responsive: true, maintainAspectRatio: false, 
+        plugins:{legend:{labels:{color:"#e0e0e0"}}},
         scales:{
-            x:{ticks:{color:"white"}},
-            y:{ type: 'linear', display: true, position: 'left', ticks:{color:"#bb86fc"} },
-            y1:{ type: 'linear', display: true, position: 'right', ticks:{color:"#03dac6", stepSize: 1}, grid:{drawOnChartArea: false} }
+            x: { 
+                ticks: { color: "#e0e0e0", font: {size: 12} }, 
+                grid: { color: '#444' } 
+            },
+            y: { 
+                type: 'linear', display: true, position: 'left', 
+                ticks: { color: "#bb86fc" }, 
+                grid: { color: '#444' } 
+            },
+            y1: { 
+                type: 'linear', display: true, position: 'right', 
+                ticks: { color: "#03dac6", stepSize: 1 }, 
+                grid: { drawOnChartArea: false } 
+            }
         }
     }
 });

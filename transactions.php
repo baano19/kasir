@@ -3,9 +3,9 @@
 date_default_timezone_set('Asia/Jakarta');
 $role = $_SESSION["role"]; $uid = $_SESSION["user_id"];
 
-// Ambil info cabang dari user yang login (buat tau dia capster cabang mana)
+// Ambil info cabang dan jatah uang makan capster yang login
 $my_branch = $db->query("SELECT branch_id FROM users WHERE id=$uid")->fetchColumn() ?: 1;
-$meal_allowance = $db->query("SELECT value FROM settings WHERE key='meal_allowance'")->fetchColumn() ?: 30000;
+$meal_allowance = $db->query("SELECT meal_allowance FROM branches WHERE id='$my_branch'")->fetchColumn() ?: 30000;
 
 // --- LOGIC KLAIM UANG MAKAN ---
 if(isset($_POST["claim_meal"]) && $role == "barber"){
