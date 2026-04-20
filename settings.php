@@ -43,12 +43,18 @@ $branches = $db->query("SELECT * FROM branches ORDER BY id ASC")->fetchAll();
     </div>
     
     <?php if($tab == "branches"): ?>
-        <div class="card">
-            <h3>Tambah Cabang & Uang Makan</h3>
-            <form method="POST" style="display:flex; gap:10px; flex-wrap:wrap;">
-                <input type="text" name="n" placeholder="Nama Cabang" style="flex:2; min-width:150px;" required>
-                <input type="number" name="m" placeholder="Uang Makan (Rp)" style="flex:1; min-width:120px;" required>
-                <button name="add_b">Tambah</button>
+        <div class="card" style="border-left-color: #bb86fc;">
+            <h3 style="margin-top:0;">Tambah Cabang Baru</h3>
+            <form method="POST" style="display:flex; gap:10px; flex-wrap:wrap; align-items: flex-end;">
+                <div style="flex:2; min-width:150px;">
+                    <label style="font-size: 0.8rem; color: #aaa;">Nama Cabang</label>
+                    <input type="text" name="n" placeholder="Contoh: Cabang Bekasi" required style="width: 100% !important; margin: 0 !important; height: 40px;">
+                </div>
+                <div style="flex:1; min-width:120px;">
+                    <label style="font-size: 0.8rem; color: #aaa;">Uang Makan/Hari (Rp)</label>
+                    <input type="number" name="m" placeholder="30000" required style="width: 100% !important; margin: 0 !important; height: 40px;">
+                </div>
+                <button name="add_b" style="height: 40px; margin: 0 !important; background: #bb86fc !important; color: #121212 !important; font-weight: bold; border-radius: 6px;">Tambah Cabang</button>
             </form>
         </div>
         <div class="table-container"><table><thead><tr><th>ID</th><th>Nama Cabang</th><th>Uang Makan/Hari</th><th>Aksi</th></tr></thead><tbody>
@@ -78,7 +84,21 @@ $branches = $db->query("SELECT * FROM branches ORDER BY id ASC")->fetchAll();
         </tbody></table></div>
     
     <?php elseif($tab == "capsters"): ?>
-        <?php else: ?>
+        <div class="card"><h3>Tambah Capster</h3><form method="POST" style="display:flex; gap:10px; flex-wrap:wrap;">
+            <select name="b_id" required style="flex:1; min-width:120px;"><option value="">-- Cabang --</option><?php foreach($branches as $b) echo "<option value='{$b['id']}'>{$b['name']}</option>"; ?></select>
+            <input type="text" name="n" placeholder="Nama" style="flex:1; min-width:120px;" required><input type="text" name="u" placeholder="Username" style="flex:1; min-width:120px;" required><input type="text" name="pw" placeholder="Password" style="flex:1; min-width:120px;" required><button name="add_c">Tambah</button>
+        </form></div>
+        <div class="table-container"><table><thead><tr><th>Cabang</th><th>Nama (User)</th><th>Pindah Cabang</th><th>Aksi</th></tr></thead><tbody>
+            <?php $cs=$db->query("SELECT u.*, b.name as bname FROM users u LEFT JOIN branches b ON u.branch_id=b.id WHERE u.role='barber'")->fetchAll(); foreach($cs as $c): ?>
+            <tr>
+                <td><?=$c['bname']?></td><td><b><?=$c['name']?></b> (<?=$c['username']?>)</td>
+                <td><form method="POST" style="display:flex; gap:5px;"><input type="hidden" name="id" value="<?=$c['id']?>"><select name="b_id"><?php foreach($branches as $b){ $sel=($b['id']==$c['branch_id'])?'selected':''; echo "<option value='{$b['id']}' $sel>{$b['name']}</option>"; } ?></select><button name="up_bc" style="padding:5px!important;">Pindah</button></form></td>
+                <td><form method="POST" style="display:flex;gap:5px;"><input type="hidden" name="id" value="<?=$c['id']?>"><input type="text" name="pw" placeholder="Pass Baru" style="width:80px;"><button name="up_pc" style="padding:5px!important;">Pass</button><button name="del_c" class="del" onclick="return confirm('Hapus?')" style="padding:5px!important;">Del</button></form></td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody></table></div>
+    
+    <?php else: ?>
         <div class="card" style="max-width:400px; margin-bottom:20px;"><h3>Ganti Password Admin</h3><form method="POST"><input type="text" name="pw" placeholder="Password Baru" required><button name="up_adm" style="margin-top:10px;">Update</button></form></div>
     <?php endif; ?>
 </div>
