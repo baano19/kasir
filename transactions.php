@@ -36,25 +36,32 @@ $where = []; $p = [];
 
 $start_date = "";
 $end_date = "";
+$date_range_val = "";
 
 if($role == "barber"){ 
-    // Filter khusus Capster: Punya dia sendiri
+    // Filter khusus Capster
     $where[] = "t.user_id=?"; $p[] = $uid; 
     
-    // Cek apakah ada request tanggal, kalau tidak default ke hari ini
-    if(isset($_GET['start_date'])) {
-        $start_date = $_GET["start_date"];
-        $end_date = $_GET["end_date"];
+    // Cek parameter date_range (Format dari Flatpickr: "YYYY-MM-DD to YYYY-MM-DD")
+    if(isset($_GET['date_range'])) {
+        $date_range_val = trim($_GET['date_range']);
+        if(!empty($date_range_val)) {
+            $dates = explode(" to ", $date_range_val);
+            $start_date = $dates[0];
+            $end_date = isset($dates[1]) ? $dates[1] : $dates[0]; // Kalau cuma klik 1 tanggal
+        }
     } else {
+        // Default load: Hari ini
         $start_date = date('Y-m-d');
         $end_date = date('Y-m-d');
+        $date_range_val = $start_date; 
     }
 
     if(!empty($start_date)) {
         $where[] = "date(t.created_at) >= ?"; $p[] = $start_date;
     }
     if(!empty($end_date)) {
-        $where[] = "date(t.created_at) <= ?"; $p[] = $end_date;
+        $where[] = "date(t.created_at) <= ?"; $p[] = $end_date . " 23:59:59"; // Biar full seharian
     }
 
     // Label buat di kotak ringkasan Gross
@@ -98,8 +105,7 @@ $list = $logs->fetchAll();
 $url_params = "";
 if(!empty($_GET['f_b'])) $url_params .= "&f_b=" . $_GET['f_b'];
 if(!empty($_GET['f_d'])) $url_params .= "&f_d=" . $_GET['f_d'];
-if(isset($_GET['start_date'])) $url_params .= "&start_date=" . $_GET['start_date'];
-if(isset($_GET['end_date'])) $url_params .= "&end_date=" . $_GET['end_date'];
+if(isset($_GET['date_range'])) $url_params .= "&date_range=" . urlencode($_GET['date_range']);
 ?>
 
 <!DOCTYPE html>
@@ -107,6 +113,8 @@ if(isset($_GET['end_date'])) $url_params .= "&end_date=" . $_GET['end_date'];
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="assets/style.css?v=<?=time()?>">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
     <title>Transaksi BPOS</title>
 </head>
 <body>
@@ -176,18 +184,14 @@ if(isset($_GET['end_date'])) $url_params .= "&end_date=" . $_GET['end_date'];
     <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
         
         <div class="card" style="background: #252525; border-left-color: #4CAF50; margin: 0; padding: 12px 15px;">
-            <form method="GET" style="display: flex; align-items: center; gap: 10px; margin: 0; flex-wrap: wrap;">
+            <form method="GET" id="form-filter-capster" style="display: flex; align-items: center; gap: 10px; margin: 0; flex-wrap: wrap;">
                 
-                <div style="display: flex; align-items: center; gap: 5px;">
-                    <label style="font-size: 0.85rem; color: #ccc;">Dari:</label>
-                    <input type="date" name="start_date" value="<?= $start_date ?>" 
-                        style="width: 130px !important; height: 35px !important; margin: 0 !important; padding: 0 5px !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; -webkit-appearance: none !important; box-sizing: border-box !important; border-radius: 6px;">
-                </div>
-                
-                <div style="display: flex; align-items: center; gap: 5px;">
-                    <label style="font-size: 0.85rem; color: #ccc;">Sampai:</label>
-                    <input type="date" name="end_date" value="<?= $end_date ?>" 
-                        style="width: 130px !important; height: 35px !important; margin: 0 !important; padding: 0 5px !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; -webkit-appearance: none !important; box-sizing: border-box !important; border-radius: 6px;">
+                <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 220px;">
+                    <label style="font-size: 0.85rem; color: #ccc; white-space: nowrap;">Pilih Tanggal:</label>
+                    <div style="width: 100%; position: relative;">
+                        <input type="text" id="date_range_picker" name="date_range" value="<?= $date_range_val ?>" placeholder="Semua Waktu" 
+                            style="width: 100% !important; height: 35px !important; margin: 0 !important; padding: 0 10px !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; border-radius: 6px; box-sizing: border-box !important; cursor: pointer; text-align: center;">
+                    </div>
                 </div>
                 
                 <div style="display: flex; gap: 5px; flex-wrap: wrap;">
@@ -195,7 +199,7 @@ if(isset($_GET['end_date'])) $url_params .= "&end_date=" . $_GET['end_date'];
                     
                     <a href="transactions.php" style="display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; height: 35px; background: #444; color: white; text-decoration: none; border-radius: 6px; font-size: 0.8rem; box-sizing: border-box;">Hari Ini</a>
                     
-                    <a href="transactions.php?start_date=&end_date=" style="display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; height: 35px; background: transparent; color: #ff4d4d; border: 1px solid #ff4d4d; text-decoration: none; border-radius: 6px; font-size: 0.8rem; box-sizing: border-box;">Clear</a>
+                    <a href="transactions.php?date_range=" style="display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; height: 35px; background: transparent; color: #ff4d4d; border: 1px solid #ff4d4d; text-decoration: none; border-radius: 6px; font-size: 0.8rem; box-sizing: border-box;">Clear</a>
                 </div>
             </form>
         </div>
@@ -274,15 +278,42 @@ if(isset($_GET['end_date'])) $url_params .= "&end_date=" . $_GET['end_date'];
 
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
-function toggleMenu() { document.getElementById('sidebar').classList.toggle('active'); }
-document.addEventListener('click', function(event) {
-    var sidebar = document.getElementById('sidebar');
-    var burger = document.querySelector('.burger-btn');
-    if (sidebar.classList.contains('active') && !sidebar.contains(event.target) && !burger.contains(event.target)) {
-        sidebar.classList.remove('active');
+    if(document.getElementById("date_range_picker")) {
+        flatpickr("#date_range_picker", {
+            mode: "range",
+            dateFormat: "Y-m-d",
+            altInput: true,
+            altFormat: "d M Y", // Biar tampilannya cakep (ex: 20 Apr 2026)
+            disableMobile: "true", // WAJIB biar di HP tetep muncul kalender range-nya, bukan kalender bawaan HP
+            
+            // Script sakti buat nambahin tombol "Ke Hari Ini" di dalem pop-up kalender
+            onReady: function(selectedDates, dateStr, instance) {
+                const btnToday = document.createElement("button");
+                btnToday.innerHTML = "Ke Hari Ini";
+                btnToday.style.cssText = "display: block; width: 100%; padding: 10px; background: #4CAF50; color: white; border: none; cursor: pointer; font-weight: bold; font-size: 14px; border-radius: 0 0 5px 5px;";
+                btnToday.type = "button";
+                
+                // Pas tombol diklik, kalender langsung pindah ke hari ini dan nutup
+                btnToday.addEventListener("click", function() {
+                    instance.setDate(new Date()); // Set ke hari ini
+                    instance.close(); // Tutup pop-up
+                });
+                
+                instance.calendarContainer.appendChild(btnToday);
+            }
+        });
     }
-});
+
+    function toggleMenu() { document.getElementById('sidebar').classList.toggle('active'); }
+    document.addEventListener('click', function(event) {
+        var sidebar = document.getElementById('sidebar');
+        var burger = document.querySelector('.burger-btn');
+        if (sidebar.classList.contains('active') && !sidebar.contains(event.target) && !burger.contains(event.target)) {
+            sidebar.classList.remove('active');
+        }
+    });
 </script>
 </body>
 </html>
