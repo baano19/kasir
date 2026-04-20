@@ -25,24 +25,38 @@ if(isset($_POST["delete_t"]) && $role == "admin"){
     $st->execute([$_POST["t_id"]]); header("Location: transactions.php"); exit(); 
 }
 
-// --- 3. AMBIL DATA CAPSTER (Taruh luar agar bisa diakses semua role untuk filter/pagination) ---
+// --- 3. AMBIL DATA CAPSTER ---
 $bs = $db->query("SELECT id, name FROM users WHERE role='barber' ORDER BY name ASC")->fetchAll();
 
-// --- 4. LOGIC FILTER & PAGINATION ---
+// --- 4. LOGIC FILTER HARIAN & PAGINATION ---
 $limit = 10; 
 $page = (int)($_GET["page"] ?? 1); 
 $off = ($page - 1) * $limit;
 $where = []; $p = []; 
 
 if($role == "barber"){ 
+    // Filter khusus Capster: Punya dia sendiri DAN tanggal tertentu (Default hari ini)
     $where[] = "t.user_id=?"; $p[] = $uid; 
+    $selected_date = $_GET["f_d"] ?? date('Y-m-d');
+    $where[] = "date(t.created_at)=?"; $p[] = $selected_date;
 } else { 
+    // Filter Admin: Sesuai yang dipilih di form
     if(!empty($_GET["f_b"])){ $where[] = "t.user_id=?"; $p[] = $_GET["f_b"]; } 
     if(!empty($_GET["f_d"])){ $where[] = "date(t.created_at)=?"; $p[] = $_GET["f_d"]; } 
 }
 $w_sql = count($where) ? "WHERE ".implode(" AND ", $where) : "";
 
-// Hitung Total Halaman (PENTING: Di luar if agar pagination muncul di Capster)
+// Hitung Ringkasan Pendapatan (Khusus Capster)
+$total_gross = 0;
+$total_net = 0;
+if($role == "barber") {
+    $sum_query = $db->prepare("SELECT SUM(amount) FROM transactions t $w_sql");
+    $sum_query->execute($p);
+    $total_gross = $sum_query->fetchColumn() ?? 0;
+    $total_net = $total_gross * 0.5;
+}
+
+// Hitung Total Halaman
 $total_data = $db->prepare("SELECT COUNT(*) FROM transactions t $w_sql");
 $total_data->execute($p);
 $t_rows = $total_data->fetchColumn();
@@ -108,9 +122,7 @@ if(!empty($_GET['f_d'])) $url_params .= "&f_d=" . $_GET['f_d'];
     <?php if($role == "admin"): ?>
     <div class="card" style="background: #1a1a1a; border-left: 4px solid orange; overflow: hidden; padding: 15px !important;">
         <h3 style="margin-top:0; color: orange; font-size: 1.1rem;">Filter Data</h3>
-        
         <form method="GET" style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
-            
             <div style="width: 100%; position: relative;">
                 <select name="f_b" style="width: 100% !important; height: 42px; border-radius: 8px; background: #252525; color: white; border: 1px solid #444; padding: 0 10px;">
                     <option value="">Semua Capster</option>
@@ -120,31 +132,43 @@ if(!empty($_GET['f_d'])) $url_params .= "&f_d=" . $_GET['f_d'];
                     } ?>
                 </select>
             </div>
-
             <div style="width: 100%; max-width: 100%; overflow: hidden; display: block;">
                 <input type="date" name="f_d" value="<?= $_GET['f_d'] ?? '' ?>" 
-                    style="
-                        width: 100% !important; 
-                        max-width: 100% !important; 
-                        height: 42px !important; 
-                        box-sizing: border-box !important; 
-                        display: block !important;
-                        -webkit-appearance: none !important; 
-                        background: #252525 !important; 
-                        color: white !important; 
-                        border: 1px solid #444 !important; 
-                        border-radius: 8px !important; 
-                        padding: 0 10px !important;
-                        margin: 0 !important;
-                    ">
+                    style="width: 100% !important; max-width: 100% !important; height: 42px !important; box-sizing: border-box !important; display: block !important; -webkit-appearance: none !important; background: #252525 !important; color: white !important; border: 1px solid #444 !important; border-radius: 8px !important; padding: 0 10px !important; margin: 0 !important;">
             </div>
-
             <div style="width: 100%;">
-                <button type="submit" style="background:orange !important; color: white !important; width: 100% !important; height: 42px; font-weight: bold; border-radius: 8px; border: none; cursor: pointer;">
-                    Cari Data
-                </button>
+                <button type="submit" style="background:orange !important; color: white !important; width: 100% !important; height: 42px; font-weight: bold; border-radius: 8px; border: none; cursor: pointer;">Cari Data</button>
             </div>
         </form>
+    </div>
+    <?php endif; ?>
+
+    <?php if($role == "barber"): ?>
+    <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; align-items: center;">
+        
+        <div class="card" style="background: #252525; border-left-color: #4CAF50; margin: 0; padding: 12px 15px; flex: 1; min-width: 250px;">
+            <form method="GET" style="display: flex; align-items: center; gap: 10px; margin: 0;">
+                <label style="font-size: 0.85rem; color: #ccc;">Lihat Hari:</label>
+                <div style="overflow: hidden; border-radius: 6px;">
+                    <input type="date" name="f_d" value="<?= $selected_date ?>" onchange="this.form.submit()" 
+                        style="width: 140px !important; height: 35px !important; margin: 0 !important; padding: 0 10px !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; -webkit-appearance: none !important; box-sizing: border-box !important;">
+                </div>
+                <?php if($selected_date !== date('Y-m-d')): ?>
+                    <a href="transactions.php" style="font-size: 0.8rem; color: #4CAF50; text-decoration: none; font-weight: bold;">(Hari Ini)</a>
+                <?php endif; ?>
+            </form>
+        </div>
+
+        <div style="display: flex; gap: 10px; flex: 1; min-width: 250px;">
+            <div style="background: #252525; padding: 10px 15px; border-radius: 8px; border: 1px solid #444; flex: 1;">
+                <span style="font-size: 0.75rem; opacity: 0.7;">Gross (<?= date('d M', strtotime($selected_date)) ?>)</span>
+                <div style="font-weight: bold; color: #fff; font-size: 1.1rem;">Rp <?= number_format($total_gross) ?></div>
+            </div>
+            <div style="background: #252525; padding: 10px 15px; border-radius: 8px; border: 1px solid #4CAF50; flex: 1;">
+                <span style="font-size: 0.75rem; opacity: 0.7;">Jatah Lo</span>
+                <div style="font-weight: bold; color: #4CAF50; font-size: 1.1rem;">Rp <?= number_format($total_net) ?></div>
+            </div>
+        </div>
     </div>
     <?php endif; ?>
 
@@ -221,4 +245,3 @@ document.addEventListener('click', function(event) {
 </script>
 </body>
 </html>
-
