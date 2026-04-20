@@ -42,13 +42,12 @@ if($role == "barber"){
     // Filter khusus Capster
     $where[] = "t.user_id=?"; $p[] = $uid; 
     
-    // Cek parameter date_range (Format dari Flatpickr: "YYYY-MM-DD to YYYY-MM-DD")
     if(isset($_GET['date_range'])) {
         $date_range_val = trim($_GET['date_range']);
         if(!empty($date_range_val)) {
             $dates = explode(" to ", $date_range_val);
             $start_date = $dates[0];
-            $end_date = isset($dates[1]) ? $dates[1] : $dates[0]; // Kalau cuma klik 1 tanggal
+            $end_date = isset($dates[1]) ? $dates[1] : $dates[0];
         }
     } else {
         // Default load: Hari ini
@@ -61,7 +60,7 @@ if($role == "barber"){
         $where[] = "date(t.created_at) >= ?"; $p[] = $start_date;
     }
     if(!empty($end_date)) {
-        $where[] = "date(t.created_at) <= ?"; $p[] = $end_date . " 23:59:59"; // Biar full seharian
+        $where[] = "date(t.created_at) <= ?"; $p[] = $end_date . " 23:59:59";
     }
 
     // Label buat di kotak ringkasan Gross
@@ -184,22 +183,11 @@ if(isset($_GET['date_range'])) $url_params .= "&date_range=" . urlencode($_GET['
     <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
         
         <div class="card" style="background: #252525; border-left-color: #4CAF50; margin: 0; padding: 12px 15px;">
-            <form method="GET" id="form-filter-capster" style="display: flex; align-items: center; gap: 10px; margin: 0; flex-wrap: wrap;">
-                
-                <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 220px;">
-                    <label style="font-size: 0.85rem; color: #ccc; white-space: nowrap;">Pilih Tanggal:</label>
-                    <div style="width: 100%; position: relative;">
-                        <input type="text" id="date_range_picker" name="date_range" value="<?= $date_range_val ?>" placeholder="Semua Waktu" 
-                            style="width: 100% !important; height: 35px !important; margin: 0 !important; padding: 0 10px !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; border-radius: 6px; box-sizing: border-box !important; cursor: pointer; text-align: center;">
-                    </div>
-                </div>
-                
-                <div style="display: flex; gap: 5px; flex-wrap: wrap;">
-                    <button type="submit" style="padding: 0 15px; height: 35px; background: #4CAF50; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: bold; margin: 0 !important;">Cari</button>
-                    
-                    <a href="transactions.php" style="display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; height: 35px; background: #444; color: white; text-decoration: none; border-radius: 6px; font-size: 0.8rem; box-sizing: border-box;">Hari Ini</a>
-                    
-                    <a href="transactions.php?date_range=" style="display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; height: 35px; background: transparent; color: #ff4d4d; border: 1px solid #ff4d4d; text-decoration: none; border-radius: 6px; font-size: 0.8rem; box-sizing: border-box;">Clear</a>
+            <form method="GET" id="form-filter-capster" style="display: flex; align-items: center; gap: 10px; margin: 0;">
+                <label style="font-size: 0.85rem; color: #ccc; white-space: nowrap;">Pilih Tanggal:</label>
+                <div style="width: 100%; position: relative;">
+                    <input type="text" id="date_range_picker" name="date_range" value="<?= htmlspecialchars($date_range_val) ?>" placeholder="Semua Waktu" 
+                        style="width: 100% !important; height: 40px !important; margin: 0 !important; padding: 0 15px !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; border-radius: 6px; box-sizing: border-box !important; cursor: pointer; text-align: left; font-size: 15px;">
                 </div>
             </form>
         </div>
@@ -285,23 +273,44 @@ if(isset($_GET['date_range'])) $url_params .= "&date_range=" . urlencode($_GET['
             mode: "range",
             dateFormat: "Y-m-d",
             altInput: true,
-            altFormat: "d M Y", // Biar tampilannya cakep (ex: 20 Apr 2026)
-            disableMobile: "true", // WAJIB biar di HP tetep muncul kalender range-nya, bukan kalender bawaan HP
+            altFormat: "d M Y", 
+            disableMobile: "true", 
             
-            // Script sakti buat nambahin tombol "Ke Hari Ini" di dalem pop-up kalender
+            // Auto submit saat kalender ditutup
+            onClose: function(selectedDates, dateStr, instance) {
+                // Submit form otomatis kalau user udah milih (atau abis pencet Hari Ini/Clear)
+                document.getElementById("form-filter-capster").submit();
+            },
+            
+            // Tambahin tombol "Hari Ini" dan "Clear" di dalam kalender
             onReady: function(selectedDates, dateStr, instance) {
+                const btnContainer = document.createElement("div");
+                btnContainer.style.cssText = "display: flex; gap: 5px; padding: 10px; background: #252525; border-radius: 0 0 5px 5px; border-top: 1px solid #444;";
+
+                // Tombol HARI INI
                 const btnToday = document.createElement("button");
-                btnToday.innerHTML = "Ke Hari Ini";
-                btnToday.style.cssText = "display: block; width: 100%; padding: 10px; background: #4CAF50; color: white; border: none; cursor: pointer; font-weight: bold; font-size: 14px; border-radius: 0 0 5px 5px;";
+                btnToday.innerHTML = "Hari Ini";
+                btnToday.style.cssText = "flex: 1; padding: 8px; background: var(--primary); color: white; border: none; cursor: pointer; font-weight: bold; font-size: 14px; border-radius: 4px;";
                 btnToday.type = "button";
-                
-                // Pas tombol diklik, kalender langsung pindah ke hari ini dan nutup
                 btnToday.addEventListener("click", function() {
-                    instance.setDate(new Date()); // Set ke hari ini
-                    instance.close(); // Tutup pop-up
+                    const today = new Date();
+                    instance.setDate([today, today]); // Set ke hari ini
+                    instance.close(); // Tutup & trigger auto-submit
+                });
+
+                // Tombol CLEAR
+                const btnClear = document.createElement("button");
+                btnClear.innerHTML = "Clear";
+                btnClear.style.cssText = "flex: 1; padding: 8px; background: #ff4d4d; color: white; border: none; cursor: pointer; font-weight: bold; font-size: 14px; border-radius: 4px;";
+                btnClear.type = "button";
+                btnClear.addEventListener("click", function() {
+                    instance.clear(); // Hapus tanggal
+                    instance.close(); // Tutup & trigger auto-submit
                 });
                 
-                instance.calendarContainer.appendChild(btnToday);
+                btnContainer.appendChild(btnToday);
+                btnContainer.appendChild(btnClear);
+                instance.calendarContainer.appendChild(btnContainer);
             }
         });
     }
