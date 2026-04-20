@@ -84,7 +84,10 @@ for ($i = 6; $i >= 0; $i--) {
     <h2>BPOS</h2>
     <a href="dashboard.php" class="active">Dashboard</a>
     <a href="transactions.php">Transaksi</a>
-    <?php if($role=="admin") echo "<a href=\"settings.php\">Settings</a>"; ?>
+    <?php if($role=="admin"): ?>
+        <a href="expenses.php">Pengeluaran</a>
+        <a href="settings.php">Settings</a>
+    <?php endif; ?>
     <a href="logout.php" class="logout-link">Logout</a>
 </div>
 
@@ -143,7 +146,7 @@ for ($i = 6; $i >= 0; $i--) {
                     style="width:100% !important; margin:0 !important; height: 35px !important; padding: 0 10px !important; background: #1a1a1a !important; color: white !important; border: 1px solid #444 !important; border-radius: 6px; box-sizing: border-box !important;">
             </div>
             
-            <button name="add_expense" style="background: red !important; height: 35px !important; padding: 0 !important; border-radius: 6px; font-weight: bold;">Simpan Biaya</button>
+            <button name="add_expense" style="background: red !important; height: 35px !important; padding: 0 !important; border-radius: 6px; font-weight: bold; color: white;">Simpan Biaya</button>
         </form>
     </div>
 
@@ -159,7 +162,7 @@ for ($i = 6; $i >= 0; $i--) {
                 <label style="font-size:0.75rem; opacity:0.8;">Sampai Tanggal</label>
                 <input type="date" name="end" value="<?= date('Y-m-d') ?>" required style="width: 100% !important; height: 40px; border-radius: 8px;">
             </div>
-            <button type="submit" style="background:#4CAF50 !important; height: 40px; font-weight: bold;">📥 Download</button>
+            <button type="submit" style="background:#4CAF50 !important; height: 40px; font-weight: bold; border-radius: 8px; border:none; color:white;">📥 Download</button>
         </form>
     </div>
     
@@ -178,10 +181,10 @@ for ($i = 6; $i >= 0; $i--) {
 
     <?php else: ?>
     <div style="display:grid;grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));gap:20px;margin-bottom:30px;">
-        <div class="card"><h3>Customer</h3><p style="font-size: 2rem; font-weight:bold;"><?= $cust ?></p></div>
+        <div class="card"><h3>Customer</h3><p style="font-size: 2rem; font-weight:bold; margin:10px 0;"><?= $cust ?></p></div>
         <div class="card" style="border-left-color:var(--primary)">
             <h3>Gaji Anda (Bersih 50%)</h3>
-            <p style="font-size: 1.5rem; font-weight:bold; color:var(--primary);">Rp <?= number_format(($income_gross ?: 0) * 0.5) ?></p>
+            <p style="font-size: 1.5rem; font-weight:bold; color:var(--primary); margin: 5px 0;">Rp <?= number_format(($income_gross ?: 0) * 0.5) ?></p>
             <p style="font-size: 0.85rem; opacity:0.8;">Uang Makan yang sudah diambil: Rp <?= number_format($my_meals) ?></p>
         </div>
     </div>
