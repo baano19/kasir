@@ -74,21 +74,87 @@
         console.log('[BPOS] App berhasil diinstall!');
     });
 
-    // ---- Online/Offline indicator ----
-    function updateOnlineStatus() {
+    // ---- Online/Offline indicator (Ping-based, bukan navigator.onLine) ----
+    // navigator.onLine tidak reliable di Android/mode pesawat
+    // Solusi: fetch request kecil ke server setiap 10 detik
+    let isActuallyOnline = true;
+
+    async function pingServer() {
         const indicator = document.getElementById('online-indicator');
-        if (!indicator) return;
-        if (navigator.onLine) {
-            indicator.textContent = '🟢 Online';
-            indicator.style.color = '#03dac6';
-        } else {
-            indicator.textContent = '🔴 Offline';
-            indicator.style.color = '#cf6679';
+        try {
+            // Fetch favicon/manifest dengan cache-bust biar nggak kena cache SW
+            const res = await fetch('/manifest.json?_ping=' + Date.now(), {
+                method: 'HEAD',
+                cache: 'no-store',
+                signal: AbortSignal.timeout(4000) // timeout 4 detik
+            });
+            if (res.ok) {
+                isActuallyOnline = true;
+                if (indicator) {
+                    indicator.textContent = '🟢 Online';
+                    indicator.style.color = '#03dac6';
+                }
+            } else { throw new Error('Bad response'); }
+        } catch {
+            isActuallyOnline = false;
+            if (indicator) {
+                indicator.textContent = '🔴 Offline';
+                indicator.style.color = '#cf6679';
+            }
         }
     }
-    window.addEventListener('online',  updateOnlineStatus);
-    window.addEventListener('offline', updateOnlineStatus);
-    document.addEventListener('DOMContentLoaded', updateOnlineStatus);
+
+    // Ping saat halaman load & setiap 10 detik
+    document.addEventListener('DOMContentLoaded', pingServer);
+    setInterval(pingServer, 10000);
+
+    // ---- Guard: Blokir submit form saat offline ----
+    // Mencegah data hilang diam-diam saat user input pas offline
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('form[method="POST"], form[method="post"]').forEach(function(form) {
+            form.addEventListener('submit', function(e) {
+                if (!isActuallyOnline) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    showOfflineWarning();
+                    return false;
+                }
+            }, true); // capture phase biar jalan sebelum handler lain
+        });
+    });
+
+    function showOfflineWarning() {
+        // Hapus warning lama kalau ada
+        const existing = document.getElementById('offline-warning-toast');
+        if (existing) existing.remove();
+
+        const toast = document.createElement('div');
+        toast.id = 'offline-warning-toast';
+        toast.innerHTML = `
+            <div style="font-size:1.5rem; margin-bottom:8px;">📡</div>
+            <strong style="display:block; margin-bottom:6px; color:#fff;">Kamu Sedang Offline!</strong>
+            <span style="font-size:0.85rem; color:#aaa; line-height:1.5;">
+                Data tidak bisa disimpan saat tidak ada koneksi.<br>
+                Sambungkan internet lalu coba lagi.
+            </span>
+            <button onclick="this.closest('#offline-warning-toast').remove()"
+                style="margin-top:14px; width:100%; padding:10px;
+                background:#bb86fc; color:#000; border:none;
+                border-radius:8px; font-weight:bold; cursor:pointer; font-size:0.9rem;">
+                Oke, Mengerti
+            </button>`;
+        toast.style.cssText = `
+            position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+            z-index:99999; background:#1e1e1e;
+            border:1px solid #cf6679; border-radius:14px;
+            padding:20px 24px; width:calc(100% - 48px); max-width:340px;
+            text-align:center; box-shadow:0 10px 40px rgba(0,0,0,0.7);
+            animation:slideUpBanner 0.3s ease forwards;`;
+        document.body.appendChild(toast);
+
+        // Auto-hilang setelah 6 detik
+        setTimeout(() => { if (toast.parentNode) toast.remove(); }, 6000);
+    }
 </script>
 </body>
 </html>
