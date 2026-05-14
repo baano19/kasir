@@ -14,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($u && password_verify($password, $u['password'])) {
         echo json_encode([
             'success' => true,
-            'user' => [
+            'data' => [
                 'id' => $u['id'],
                 'username' => $u['username'],
                 'name' => $u['name'],

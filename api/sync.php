@@ -6,12 +6,12 @@ $type = $_GET['type'] ?? '';
 
 if ($type === 'pull') {
     // Pull master data & existing transactions/expenses
-    $branches = $db->query("SELECT id, name, meal_allowance FROM branches")->fetchAll(PDO::FETCH_ASSOC);
+    $branches = $db->query("SELECT id, name, meal_allowance, address FROM branches")->fetchAll(PDO::FETCH_ASSOC);
     $services = $db->query("SELECT id, name, price, branch_id FROM services")->fetchAll(PDO::FETCH_ASSOC);
     $users = $db->query("SELECT id, username, name, role, branch_id, meal_allowance FROM users")->fetchAll(PDO::FETCH_ASSOC);
 
     // History limit: 30 days
-    $transactions = $db->query("SELECT id, user_id, service_name, amount, created_at, branch_id FROM transactions WHERE created_at >= date('now', '-30 days')")->fetchAll(PDO::FETCH_ASSOC);
+    $transactions = $db->query("SELECT id, user_id, service_name, amount, notes, created_at, branch_id FROM transactions WHERE created_at >= date('now', '-30 days')")->fetchAll(PDO::FETCH_ASSOC);
     $expenses = $db->query("SELECT id, user_id, branch_id, category, amount, notes, created_at FROM expenses WHERE created_at >= date('now', '-30 days')")->fetchAll(PDO::FETCH_ASSOC);
 
     echo json_encode([
@@ -36,8 +36,8 @@ if ($type === 'pull') {
         $expResults = [];
 
         foreach ($txs as $tx) {
-            $stmt = $db->prepare("INSERT INTO transactions (user_id, service_name, amount, created_at, branch_id) VALUES (?,?,?,?,?)");
-            $stmt->execute([$tx['user_id'], $tx['service_name'], $tx['amount'], $tx['created_at'], $tx['branch_id']]);
+            $stmt = $db->prepare("INSERT INTO transactions (user_id, service_name, amount, notes, created_at, branch_id) VALUES (?,?,?,?,?,?)");
+            $stmt->execute([$tx['user_id'], $tx['service_name'], $tx['amount'], $tx['notes'], $tx['created_at'], $tx['branch_id']]);
             $txResults[] = ['localId' => $tx['localId'], 'remoteId' => (int)$db->lastInsertId()];
         }
 
