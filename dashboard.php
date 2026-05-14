@@ -228,7 +228,7 @@ if ($is_excel || $is_print) {
 include "includes/header.php";
 
 $branches = $db->query("SELECT * FROM branches ORDER BY id ASC")->fetchAll();
-$all_c_data = $db->query("SELECT id, name, branch_id FROM users WHERE role='barber' ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC); 
+$all_c_data = $db->query("SELECT id, name, branch_id, meal_allowance FROM users WHERE role='barber' ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC); 
 
 $b_filter = isset($_GET['b_filter']) && $_GET['b_filter'] !== 'all' ? (int)$_GET['b_filter'] : 'all';
 
@@ -247,6 +247,18 @@ if(isset($_POST["add_expense"]) && $role == 'admin'){
 
     if(strtolower($cat) == 'makan' && checkDoubleClaimMakan($db, $u_id, $waktu_exp)) {
         $_SESSION['toast'] = ['type' => 'error', 'msg' => 'Ditolak: Karyawan ini sudah mendapat allowance makan hari ini!'];
+    } elseif(strtolower($cat) == 'makan' && !empty($u_id)) {
+        // Validasi nominal harus sesuai meal_allowance capster
+        $cek_allowance = $db->prepare("SELECT meal_allowance FROM users WHERE id=? AND role='barber'");
+        $cek_allowance->execute([$u_id]);
+        $allowed_amt = (int)$cek_allowance->fetchColumn();
+        if($allowed_amt > 0 && $amt !== $allowed_amt) {
+            $_SESSION['toast'] = ['type' => 'error', 'msg' => 'Ditolak: Nominal uang makan tidak sesuai! Seharusnya Rp ' . number_format($allowed_amt, 0, ',', '.') . ' untuk karyawan ini.'];
+        } else {
+            $db->prepare("INSERT INTO expenses (user_id, category, amount, notes, created_at, branch_id) VALUES (?,?,?,?,?,?)")
+               ->execute([$u_id ?: $id, $cat, $amt, $note, $waktu_exp, $b_id]);
+            $_SESSION['toast'] = ['type' => 'success', 'msg' => 'Pengeluaran berhasil dicatat!'];
+        }
     } else {
         $db->prepare("INSERT INTO expenses (user_id, category, amount, notes, created_at, branch_id) VALUES (?,?,?,?,?,?)")
            ->execute([$u_id ?: $id, $cat, $amt, $note, $waktu_exp, $b_id]);
@@ -410,12 +422,13 @@ for ($i = 6; $i >= 0; $i--) {
             <div class="form-grid-2 mb-0">
                 <div class="fg">
                     <label>Kategori</label>
-                    <input list="cats" name="exp_cat" placeholder="Ketik/Pilih Kategori" required>
+                    <input list="cats" name="exp_cat" id="exp_cat" placeholder="Ketik/Pilih Kategori" required oninput="handleExpCatChange()">
                     <datalist id="cats"><option value="Makan"><option value="Operasional"><option value="Peralatan"><option value="Lainnya"></datalist>
                 </div>
                 <div class="fg">
                     <label>Jumlah (Rp)</label>
-                    <input type="number" name="exp_amount" placeholder="Cth: 50000" required>
+                    <input type="number" name="exp_amount" id="exp_amount" placeholder="Cth: 50000" required>
+                    <small id="exp_amount_hint" style="color: var(--accent); font-size: 0.78rem; margin-top: 4px; display: none;"></small>
                 </div>
             </div>
             <div class="fg">
@@ -483,13 +496,55 @@ document.addEventListener("DOMContentLoaded", function() {
 });
 
 const allCapsters = <?= json_encode($all_c_data) ?>;
+
 function filterExpCapster() {
     const bId = document.getElementById('exp_branch')?.value;
     const sel = document.getElementById('exp_user_id');
     if(!sel || !bId) return;
     sel.innerHTML = '<option value="">-- Operasional Admin --</option>';
-    allCapsters.filter(c => c.branch_id == bId).forEach(c => { sel.innerHTML += `<option value="${c.id}">Capster: ${c.name}</option>`; });
+    allCapsters.filter(c => c.branch_id == bId).forEach(c => {
+        sel.innerHTML += `<option value="${c.id}" data-allowance="${c.meal_allowance}">Capster: ${c.name}</option>`;
+    });
+    handleExpCatChange(); // Re-check after branch change
 }
+
+function handleExpCatChange() {
+    const catInput = document.getElementById('exp_cat');
+    const amtInput = document.getElementById('exp_amount');
+    const hint = document.getElementById('exp_amount_hint');
+    const userSel = document.getElementById('exp_user_id');
+    if (!catInput || !amtInput || !userSel) return;
+
+    const isMakan = catInput.value.trim().toLowerCase() === 'makan';
+    const selectedOption = userSel.options[userSel.selectedIndex];
+    const allowance = selectedOption ? parseInt(selectedOption.dataset.allowance || 0) : 0;
+    const hasCapster = userSel.value !== '';
+
+    if (isMakan && hasCapster && allowance > 0) {
+        amtInput.value = allowance;
+        amtInput.readOnly = true;
+        amtInput.style.opacity = '0.65';
+        amtInput.style.cursor = 'not-allowed';
+        hint.textContent = '✅ Nominal dikunci sesuai allowance karyawan: Rp ' + allowance.toLocaleString('id-ID');
+        hint.style.display = 'block';
+    } else {
+        amtInput.readOnly = false;
+        amtInput.style.opacity = '';
+        amtInput.style.cursor = '';
+        hint.style.display = 'none';
+        // Kosongkan amount jika sebelumnya locked oleh logika makan
+        if (isMakan && !hasCapster) {
+            hint.textContent = '⚠️ Pilih capster terlebih dahulu untuk mengisi uang makan.';
+            hint.style.display = 'block';
+        }
+    }
+}
+
+// Juga trigger saat user_id berubah
+document.addEventListener('DOMContentLoaded', function() {
+    const userSel = document.getElementById('exp_user_id');
+    if(userSel) userSel.addEventListener('change', handleExpCatChange);
+});
 
 new Chart(document.getElementById("chart"), {
     type: 'line',
