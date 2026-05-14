@@ -1,304 +1,516 @@
-<?php include "includes/db.php"; checkLogin();
+<?php 
+include "includes/db.php"; 
+date_default_timezone_set('Asia/Jakarta');
 
-$role = $_SESSION["role"]; $id = $_SESSION["user_id"]; 
+if (session_status() == PHP_SESSION_NONE) { session_start(); }
+if (!isset($_SESSION["user_id"])) { header("Location: index"); exit(); }
 
-// Ambil List Cabang buat Filter
-$branches = $db->query("SELECT * FROM branches ORDER BY id ASC")->fetchAll();
-$b_filter = $_GET['b_filter'] ?? 'all'; // Default: Semua Cabang
+$role = $_SESSION["role"]; 
+$id = $_SESSION["user_id"]; 
+$user_name = $db->query("SELECT name FROM users WHERE id='$id'")->fetchColumn();
 
-// Parameter SQL buat memisahkan data tiap cabang
-$b_sql_t = ($b_filter == 'all') ? "" : " AND t.branch_id = '$b_filter'";
-$b_sql_e = ($b_filter == 'all') ? "" : " AND branch_id = '$b_filter'";
-$b_sql_u = ($b_filter == 'all') ? "" : " AND u.branch_id = '$b_filter'";
-
-// --- LOGIC INPUT PENGELUARAN (ADMIN ONLY) ---
-if(isset($_POST["add_expense"]) && $role == 'admin'){
-    $st = $db->prepare("INSERT INTO expenses (user_id, category, amount, notes, created_at, branch_id) VALUES (?,?,?,?,?,?)");
-    $st->execute([$id, $_POST["exp_cat"], $_POST["exp_amount"], $_POST["exp_note"], date('Y-m-d H:i:s'), $_POST["exp_branch"]]);
-    header("Location: dashboard.php"); exit();
+// --- FUNGSI HELPER: SECURITY ANTI DOUBLE CLAIM ---
+function checkDoubleClaimMakan($db, $user_id, $date) {
+    if(empty($user_id)) return false;
+    $sql = "SELECT COUNT(*) FROM expenses WHERE user_id=? AND LOWER(category)='makan' AND DATE(created_at)=DATE(?)";
+    $cek = $db->prepare($sql);
+    $cek->execute([$user_id, $date]);
+    return $cek->fetchColumn() > 0;
 }
 
-// --- 1. LOGIKA EXPORT EXCEL (CLEAN & CLEAR) MULTI-CABANG ---
-if (isset($_GET['export']) && $_GET['export'] == 'excel' && $role == 'admin') {
-    $start = $_GET['start']; $end = $_GET['end'];
-    $ex_b_filter = $_GET['b_filter'] ?? 'all';
+// =========================================================================
+// 1. LOGIKA EXPORT EXCEL & PRINT VIEW
+// =========================================================================
+$is_print = isset($_GET['view']) && $_GET['view'] == 'print';
+$is_excel = isset($_GET['export']) && $_GET['export'] == 'excel';
+
+if ($is_excel || $is_print) {
+    if($role != 'admin') exit("Akses Ditolak");
     
-    $ex_sql_t = ($ex_b_filter == 'all') ? "" : " AND t.branch_id = '$ex_b_filter'";
-    $ex_sql_s = ($ex_b_filter == 'all') ? "" : " WHERE branch_id = '$ex_b_filter'";
-    $ex_sql_e = ($ex_b_filter == 'all') ? "" : " AND branch_id = '$ex_b_filter'";
+    $start = isset($_GET['start']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['start']) ? $_GET['start'] : date('Y-m-01');
+    $end = isset($_GET['end']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['end']) ? $_GET['end'] : date('Y-m-d');
+    $ex_b_filter = isset($_GET['b_filter']) && $_GET['b_filter'] !== 'all' ? (int)$_GET['b_filter'] : 'all';
 
-    header("Content-Type: application/vnd.ms-excel");
-    header("Content-Disposition: attachment; filename=Rekap_BPOS_" . $start . "_sd_" . $end . ".xls");
-    header("Pragma: no-cache"); header("Expires: 0");
+    $branches_query = $db->query("SELECT * FROM branches ORDER BY id ASC")->fetchAll();
+    $start_fmt = date('d M Y', strtotime($start));
+    $end_fmt = date('d M Y', strtotime($end));
 
-    // Cari nama cabang buat di header Excel
-    $branch_label = "SEMUA CABANG";
-    if($ex_b_filter != 'all') {
-        $branch_label = strtoupper($db->query("SELECT name FROM branches WHERE id='$ex_b_filter'")->fetchColumn());
+    if($is_excel) {
+        header("Content-Type: application/vnd.ms-excel");
+        header("Content-Disposition: attachment; filename=Rekap_BPOS_" . $start . "_sd_" . $end . ".xls");
     }
-
-    $srv_query = $db->query("SELECT DISTINCT name FROM services $ex_sql_s ORDER BY name ASC")->fetchAll();
-    $services = []; foreach($srv_query as $s) $services[] = $s['name'];
-
-    echo "<table border='1' cellpadding='5'>";
-    $total_cols = count($services) + 4;
     
-    echo "<tr><th colspan='$total_cols' style='font-size:16px; background-color:#eeeeee; padding:10px;'>LAPORAN BPOS - $branch_label (" . date('d M Y', strtotime($start)) . " - " . date('d M Y', strtotime($end)) . ")</th></tr>";
-    echo "<tr><td colspan='$total_cols' style='border:none; height:10px;'></td></tr>";
+    echo "<html><head><title>Cetak Laporan BPOS</title><style>
+        body { font-family: sans-serif; font-size: 11px; color: #333; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; page-break-inside: auto; }
+        .table-gabungan { border: 2px solid #000; font-size: 14px; }
+        tr { page-break-inside: avoid; page-break-after: auto; }
+        th, td { border: 1px solid #000; padding: 6px; text-align: center; white-space: nowrap; }
+        .head-table { background-color: #bb86fc; color: black; font-size: 13px; font-weight:bold; }
+        .date-row { background-color: #d9ead3; font-weight: bold; text-align: left; font-size: 12px; }
+        .total-day-row { background-color: #f2f2f2; font-weight: bold; }
+        .rekap-box { background-color: #c9daf8; font-weight: bold; }
+        .text-left { text-align: left; }
+        .text-right { text-align: right; font-variant-numeric: tabular-nums; }
+        .text-danger { color: #cf6679; }
+        .title-report { font-size:18px; text-align:left; border:none; color:#bb86fc; padding-bottom:5px; }
+        .subtitle-report { font-size:12px; text-align:left; border:none; color:#666; padding-bottom:15px; }
+        .rincian-wrapper { width: 500px; page-break-inside: avoid; }
+        .bg-teal { background: #03dac6; color: #000; font-weight: bold; font-size: 13px; }
+        .bg-teal-large { background: #03dac6; color: #000; font-weight: bold; font-size: 16px; }
+        .bg-purple { background:#bb86fc; color:#000; font-size:18px; padding:15px; text-align:center; }
+        .bg-gray { background:#eee; }
+        .bg-light-gray { background:#f9f9f9; font-weight:bold; }
+        .border-none { border: none; }
+        .print-btn { padding:10px 20px; background:#bb86fc; border:none; color:black; border-radius:5px; cursor:pointer; margin-bottom:20px; font-weight:bold; }
+        .mb-20 { margin-bottom: 20px; }
+        @page { size: auto; margin: 10mm; } 
+        @media print { .no-print { display: none; } }
+    </style></head><body>";
 
-    $grand_total_gross = 0; $total_cust_all = 0;
+    if($is_print) echo "<div class='no-print'><button onclick='window.print()' class='print-btn'>🖨️ Cetak / Simpan PDF</button><hr class='mb-20'></div>";
 
-    $dates_query = $db->prepare("SELECT DISTINCT date(t.created_at) as tgl FROM transactions t WHERE date(t.created_at) >= ? AND date(t.created_at) <= ? $ex_sql_t ORDER BY tgl ASC");
-    $dates_query->execute([$start, $end]); $dates = $dates_query->fetchAll();
+    $fmt = function($num) use ($is_excel) {
+        if ($is_excel) return $num; 
+        return number_format((float)$num, 0, ',', '.');
+    };
 
-    if(count($dates) == 0) {
-        echo "<tr><td colspan='$total_cols' align='center'>Tidak ada data transaksi di periode/cabang ini.</td></tr>";
-    } else {
-        foreach($dates as $d) {
-            $tgl = $d['tgl'];
-            echo "<tr style='background-color:#d9ead3;'><td colspan='$total_cols'><b>Tanggal: " . date('d M Y', strtotime($tgl)) . "</b></td></tr>";
-            
-            echo "<tr style='font-weight:bold; background-color:#f2f2f2; text-align:center;'>
-                    <td>Nama Capster</td>";
-            foreach($services as $srv) echo "<td>$srv</td>";
-            echo "<td>Total Cust</td><td>Kotor (Rp)</td><td>Bersih 50% (Rp)</td></tr>";
+    function renderReport($db, $title, $branch_id, $start, $end, $fmt, $start_fmt, $end_fmt) {
+        $b_sql_s = ($branch_id === 'all') ? "" : "AND branch_id = $branch_id";
+        $b_sql_t = ($branch_id === 'all') ? "" : "AND t.branch_id = $branch_id";
+        $b_sql_e = ($branch_id === 'all') ? "" : "AND e.branch_id = $branch_id";
+        $b_sql_u = ($branch_id === 'all') ? "" : "AND u.branch_id = $branch_id";
 
-            // Loop Capster sesuai cabang yg difilter
-            $cap_sql = ($ex_b_filter == 'all') ? "" : " AND u.branch_id = '$ex_b_filter'";
-            $capsters = $db->query("SELECT id, name FROM users u WHERE role='barber' $cap_sql ORDER BY name ASC")->fetchAll();
-            
-            foreach($capsters as $c) {
-                $cid = $c['id'];
-                $cek_tr = $db->prepare("SELECT COUNT(id) as cust, SUM(amount) as gross FROM transactions t WHERE t.user_id=? AND date(t.created_at)=? $ex_sql_t");
-                $cek_tr->execute([$cid, $tgl]); $tr_data = $cek_tr->fetch();
-                
-                if($tr_data['cust'] > 0) {
-                    $gross = $tr_data['gross']; $grand_total_gross += $gross; $total_cust_all += $tr_data['cust'];
+        $srv_query = $db->query("SELECT DISTINCT name FROM services WHERE 1=1 $b_sql_s ORDER BY name ASC")->fetchAll();
+        $services = []; foreach($srv_query as $s) $services[] = $s['name'];
+        $total_cols = count($services) + 5; 
+
+        echo "<table>";
+        echo "<tr><th colspan='$total_cols' class='title-report'>LAPORAN PENDAPATAN: $title</th></tr>";
+        echo "<tr><th colspan='$total_cols' class='subtitle-report'>Periode: $start_fmt - $end_fmt</th></tr>";
+        
+        echo "<thead><tr><th class='head-table text-left'>TANGGAL / CAPSTER</th>";
+        foreach($services as $srv) echo "<th class='head-table'>$srv</th>";
+        echo "<th class='head-table'>CUST</th><th class='head-table text-right'>KOTOR</th><th class='head-table text-right'>MAKAN</th><th class='head-table text-right'>NET (50%)</th></tr></thead>";
+        
+        $grand_total_gross = 0; $total_cust_all = 0;
+        $dates_q = $db->prepare("SELECT DISTINCT date(t.created_at) as tgl FROM transactions t WHERE date(t.created_at) >= ? AND date(t.created_at) <= ? $b_sql_t ORDER BY tgl ASC");
+        $dates_q->execute([$start, $end]); $dates = $dates_q->fetchAll();
+
+        if(count($dates) == 0) {
+            echo "<tr><td colspan='$total_cols'>Tidak ada data transaksi.</td></tr>";
+        } else {
+            foreach($dates as $d) {
+                $tgl = $d['tgl'];
+                $day_cust = 0; $day_gross = 0; $day_exp = 0; $day_net = 0;
+
+                echo "<tr><td colspan='$total_cols' class='date-row'>Tanggal: " . date('d M Y', strtotime($tgl)) . "</td></tr>";
+                $capsters = $db->query("SELECT u.id, u.name, b.name as bname FROM users u LEFT JOIN branches b ON u.branch_id=b.id WHERE u.role='barber' $b_sql_u ORDER BY b.id, u.name ASC")->fetchAll();
+
+                foreach($capsters as $c) {
+                    $cid = $c['id'];
+                    $cek_tr = $db->prepare("SELECT COUNT(id) as cust, SUM(amount) as gross FROM transactions t WHERE t.user_id=? AND date(t.created_at)=? $b_sql_t");
+                    $cek_tr->execute([$cid, $tgl]); $tr_data = $cek_tr->fetch();
+                    $cust_count = $tr_data['cust'] ?: 0;
+                    $gross = $tr_data['gross'] ?: 0;
                     
-                    echo "<tr style='text-align:center;'><td style='text-align:left;'>{$c['name']}</td>";
-                    foreach($services as $srv) {
-                        $cek_srv = $db->prepare("SELECT COUNT(id) FROM transactions t WHERE t.user_id=? AND t.service_name=? AND date(t.created_at)=? $ex_sql_t");
-                        $cek_srv->execute([$cid, $srv, $tgl]); $jml_srv = $cek_srv->fetchColumn();
-                        echo "<td>" . ($jml_srv > 0 ? $jml_srv : "-") . "</td>";
+                    $cek_exp = $db->prepare("SELECT SUM(amount) FROM expenses WHERE user_id=? AND LOWER(category)='makan' AND date(created_at)=?");
+                    $cek_exp->execute([$cid, $tgl]); $exp_user = $cek_exp->fetchColumn() ?: 0;
+
+                    $net_user = ($gross - $exp_user) * 0.5;
+                    if($net_user < 0) $net_user = 0;
+
+                    if($cust_count > 0 || $exp_user > 0) {
+                        $day_cust += $cust_count; $day_gross += $gross; $day_exp += $exp_user; $day_net += $net_user;
+                        $grand_total_gross += $gross; $total_cust_all += $cust_count;
+
+                        echo "<tr><td class='text-left'>{$c['name']}</td>";
+                        foreach($services as $srv) {
+                            $cek_srv = $db->prepare("SELECT COUNT(id) FROM transactions t WHERE t.user_id=? AND t.service_name=? AND date(t.created_at)=? $b_sql_t");
+                            $cek_srv->execute([$cid, $srv, $tgl]); $jml_srv = $cek_srv->fetchColumn();
+                            echo "<td>" . ($jml_srv ?: "-") . "</td>";
+                        }
+                        echo "<td>$cust_count</td><td class='text-right'>".$fmt($gross)."</td>";
+                        echo "<td class='text-right text-danger'>".($exp_user > 0 ? "-".$fmt($exp_user) : "-")."</td>";
+                        echo "<td class='text-right'>".$fmt($net_user)."</td></tr>";
                     }
-                    echo "<td>{$tr_data['cust']}</td><td align='right'>" . number_format($gross) . "</td><td align='right' style='color:#0000ff;'>" . number_format($gross * 0.5) . "</td></tr>";
                 }
+                echo "<tr class='total-day-row'><td colspan='".(count($services)+1)."' class='text-right'>TOTAL HARIAN (".date('d/m', strtotime($tgl))."):</td>";
+                echo "<td>$day_cust</td><td class='text-right'>".$fmt($day_gross)."</td><td class='text-right text-danger'>-".$fmt($day_exp)."</td><td class='text-right'>".$fmt($day_net)."</td></tr>";
             }
-            echo "<tr><td colspan='$total_cols' style='border:none; height:15px;'></td></tr>"; 
         }
+
+        $barber_exp_q = $db->prepare("SELECT SUM(amount) FROM expenses e JOIN users u ON e.user_id=u.id WHERE u.role='barber' AND LOWER(e.category)='makan' AND date(e.created_at) >= ? AND date(e.created_at) <= ? $b_sql_e");
+        $barber_exp_q->execute([$start, $end]); $barber_exp = $barber_exp_q->fetchColumn() ?: 0;
+        
+        $admin_exp_q = $db->prepare("SELECT SUM(amount) FROM expenses e JOIN users u ON e.user_id=u.id WHERE (u.role='admin' OR LOWER(e.category)!='makan') AND date(e.created_at) >= ? AND date(e.created_at) <= ? $b_sql_e");
+        $admin_exp_q->execute([$start, $end]); $admin_exp = $admin_exp_q->fetchColumn() ?: 0;
+
+        $subtotal = $grand_total_gross - $barber_exp;
+        $jatah_owner = $subtotal * 0.5;
+        $bersih_admin = $jatah_owner - $admin_exp;
+
+        echo "<tr class='rekap-box'><td colspan='".(count($services)+1)."' class='text-left'>Total pendapatan Periode: $start_fmt - $end_fmt</td><td>$total_cust_all</td><td class='text-right'>".$fmt($grand_total_gross)."</td><td class='text-right text-danger'>-".$fmt($barber_exp)."</td><td class='text-right'>".$fmt($jatah_owner)."</td></tr>";
+        echo "</table><br>";
+
+        echo "<div class='rincian-wrapper'>";
+        echo "<table>";
+        echo "<tr><th colspan='2' class='head-table text-left'>RINCIAN PERHITUNGAN PENDAPATAN</th></tr>";
+        echo "<tr><td class='text-left'>Total Pendapatan Kotor</td><td class='text-right'>".$fmt($grand_total_gross)."</td></tr>";
+        echo "<tr><td class='text-left'>Total Uang Makan Capster</td><td class='text-right text-danger'>- ".$fmt($barber_exp)."</td></tr>";
+        echo "<tr class='rekap-box'><td class='text-left'>SUBTOTAL (Kotor - Makan)</td><td class='text-right'>".$fmt($subtotal)."</td></tr>";
+        echo "<tr><td class='text-left'>Pendapatan Owner (50% dari Subtotal)</td><td class='text-right'>".$fmt($jatah_owner)."</td></tr>";
+        echo "<tr><td class='text-left'>Total Pengeluaran Operasional</td><td class='text-right text-danger'>- ".$fmt($admin_exp)."</td></tr>";
+        echo "<tr class='bg-teal'><td class='text-left'>PENDAPATAN BERSIH AKHIR</td><td class='text-right'>".$fmt($bersih_admin)."</td></tr>";
+        echo "</table></div><br>";
+
+        echo "<table>";
+        echo "<tr><th colspan='6' class='title-report border-none' style='font-size:16px; padding-top:20px;'>Rincian Pengeluaran Operasional (".ucwords(strtolower($title)).")</th></tr>";
+        echo "<tr><th class='bg-gray'>Waktu</th><th class='bg-gray'>Cabang</th><th class='bg-gray'>Oleh/Untuk</th><th class='bg-gray'>Kategori</th><th class='bg-gray'>Catatan</th><th class='bg-gray text-right'>Nominal</th></tr>";
+        
+        $exp_list = $db->prepare("SELECT e.*, b.name as bname, u.name as uname, u.role FROM expenses e LEFT JOIN branches b ON e.branch_id=b.id LEFT JOIN users u ON e.user_id=u.id WHERE date(e.created_at) >= ? AND date(e.created_at) <= ? AND LOWER(e.category) != 'makan' $b_sql_e ORDER BY e.created_at ASC");
+        $exp_list->execute([$start, $end]); $expenses = $exp_list->fetchAll();
+        
+        if(count($expenses) == 0) echo "<tr><td colspan='6'>Tidak ada pengeluaran operasional.</td></tr>";
+        else foreach($expenses as $e) {
+            $siapa = ($e['role'] == 'admin') ? "Operasional Admin" : "Capster (".$e['uname'].")";
+            echo "<tr><td>".date('d/m H:i',strtotime($e['created_at']))."</td><td>{$e['bname']}</td><td>$siapa</td><td>{$e['category']}</td><td class='text-left'>{$e['notes']}</td><td class='text-right'>".$fmt($e['amount'])."</td></tr>";
+        }
+        echo "</table><br>";
+
+        return [ 'kotor' => $grand_total_gross, 'makan' => $barber_exp, 'sub' => $subtotal, 'owner' => $jatah_owner, 'admin' => $admin_exp, 'bersih' => $bersih_admin ];
     }
 
-    // --- BAGIAN REKAPITULASI (TOTAL) ---
-    $exp_q = $db->prepare("SELECT SUM(amount) FROM expenses WHERE date(created_at) >= ? AND date(created_at) <= ? $ex_sql_e");
-    $exp_q->execute([$start, $end]); $total_exp = $exp_q->fetchColumn() ?: 0;
+    if($ex_b_filter === 'all') {
+        $rekap = ['kotor'=>0, 'makan'=>0, 'sub'=>0, 'owner'=>0, 'admin'=>0, 'bersih'=>0, 'list'=>[]];
+        foreach($branches_query as $br) {
+            $h = renderReport($db, strtoupper($br['name']), $br['id'], $start, $end, $fmt, $start_fmt, $end_fmt);
+            $rekap['kotor']+=$h['kotor']; $rekap['makan']+=$h['makan']; $rekap['sub']+=$h['sub'];
+            $rekap['owner']+=$h['owner']; $rekap['admin']+=$h['admin']; $rekap['bersih']+=$h['bersih'];
+            $rekap['list'][] = ['name'=>$br['name'], 'h'=>$h];
+        }
+        
+        echo "<br><br>";
+        echo "<table class='table-gabungan'>";
+        echo "<tr><th colspan='2' class='bg-purple'>REKAP TOTAL GABUNGAN SEMUA CABANG</th></tr>";
+        
+        echo "<tr><th colspan='2' class='text-left bg-gray'>1. RINCIAN PENDAPATAN KOTOR GABUNGAN</th></tr>";
+        foreach($rekap['list'] as $l) echo "<tr><td class='text-left'> - Cabang {$l['name']}</td><td class='text-right'>".$fmt($l['h']['kotor'])."</td></tr>";
+        echo "<tr class='bg-light-gray'><td class='text-left'>TOTAL KOTOR SELURUH CABANG</td><td class='text-right'>".$fmt($rekap['kotor'])."</td></tr>";
+        echo "<tr><th colspan='2' class='border-none' style='height:10px;'></th></tr>";
 
-    $kotor_admin = $grand_total_gross * 0.5; $bersih_admin = $kotor_admin - $total_exp;
+        echo "<tr><th colspan='2' class='text-left bg-gray'>2. RINCIAN UANG MAKAN CAPSTER GABUNGAN</th></tr>";
+        foreach($rekap['list'] as $l) echo "<tr><td class='text-left'> - Cabang {$l['name']}</td><td class='text-right text-danger'>- ".$fmt($l['h']['makan'])."</td></tr>";
+        echo "<tr class='bg-light-gray'><td class='text-left'>TOTAL UANG MAKAN SELURUH CABANG</td><td class='text-right text-danger'>- ".$fmt($rekap['makan'])."</td></tr>";
+        echo "<tr><th colspan='2' class='border-none' style='height:10px;'></th></tr>";
 
-    echo "<tr><td colspan='$total_cols' style='border-top:2px solid #000;'></td></tr>";
-    echo "<tr><td colspan='2' style='font-weight:bold;'>TOTAL TRANSAKSI ($branch_label)</td><td colspan='" . (count($services)) . "'></td><td align='center'><b>$total_cust_all Cust</b></td><td align='right'><b>" . number_format($grand_total_gross) . "</b></td><td align='right' style='color:#0000ff;'><b>" . number_format($kotor_admin) . "</b></td></tr>";
-    echo "<tr><td colspan='$total_cols' style='border:none; height:20px;'></td></tr>";
-    
-    echo "<tr><td colspan='2' rowspan='4' valign='top' style='font-size:16px;'><b>REKAP OWNER:</b></td><td colspan='2' style='font-weight:bold;'>Total Jatah Kotor Admin (50%)</td><td align='right'>Rp " . number_format($kotor_admin) . "</td></tr>";
-    echo "<tr><td colspan='2' style='font-weight:bold;'>Total Pengeluaran (Makan + Operasional)</td><td align='right' style='color:red;'>- Rp " . number_format($total_exp) . "</td></tr>";
-    echo "<tr><td colspan='2' style='font-weight:bold; font-size:14px; background-color:#c9daf8;'>PENDAPATAN BERSIH OWNER</td><td align='right' style='font-weight:bold; font-size:14px; background-color:#c9daf8;'>Rp " . number_format($bersih_admin) . "</td></tr>";
-    echo "</table>"; exit(); 
+        echo "<tr class='rekap-box'><td class='text-left'>SUBTOTAL GABUNGAN (Total Kotor - Total Makan)</td><td class='text-right'>".$fmt($rekap['sub'])."</td></tr>";
+        echo "<tr><td class='text-left'>PENDAPATAN OWNER (50% DARI SUBTOTAL GABUNGAN)</td><td class='text-right'>".$fmt($rekap['owner'])."</td></tr>";
+        echo "<tr><th colspan='2' class='border-none' style='height:10px;'></th></tr>";
+
+        echo "<tr><th colspan='2' class='text-left bg-gray'>3. RINCIAN PENGELUARAN OPERASIONAL GABUNGAN</th></tr>";
+        foreach($rekap['list'] as $l) echo "<tr><td class='text-left'> - Cabang {$l['name']}</td><td class='text-right text-danger'>- ".$fmt($l['h']['admin'])."</td></tr>";
+        echo "<tr class='bg-light-gray'><td class='text-left'>TOTAL PENGELUARAN OPERASIONAL SELURUH CABANG</td><td class='text-right text-danger'>- ".$fmt($rekap['admin'])."</td></tr>";
+        echo "<tr><th colspan='2' class='border-none' style='height:15px;'></th></tr>";
+
+        echo "<tr class='bg-teal-large'><td class='text-left'>PENDAPATAN BERSIH AKHIR GABUNGAN</td><td class='text-right'>".$fmt($rekap['bersih'])."</td></tr>";
+        echo "</table>";
+    } else {
+        $nama_c = $db->query("SELECT name FROM branches WHERE id='$ex_b_filter'")->fetchColumn();
+        renderReport($db, strtoupper($nama_c), $ex_b_filter, $start, $end, $fmt, $start_fmt, $end_fmt);
+    }
+    echo "</body></html>"; exit();
 }
 
-// --- 2. LOGIKA FILTER WAKTU ---
-$filter = $_GET['filter'] ?? 'today'; $today = date("Y-m-d");
-if($filter == 'week') { $start_date = date('Y-m-d', strtotime('-7 days')); $end_date = $today; $label_waktu = "7 Hari Terakhir"; }
-elseif($filter == 'month') { $start_date = date('Y-m-01'); $end_date = date('Y-m-t'); $label_waktu = "Bulan Ini"; }
-else { $start_date = $today; $end_date = $today; $label_waktu = "Hari Ini"; }
+// =========================================================================
+// 2. DATA PREPARATION DASHBOARD
+// =========================================================================
+include "includes/header.php";
 
-// --- 3. AMBIL DATA SESUAI FILTER CABANG & WAKTU ---
+$branches = $db->query("SELECT * FROM branches ORDER BY id ASC")->fetchAll();
+$all_c_data = $db->query("SELECT id, name, branch_id FROM users WHERE role='barber' ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC); 
+
+$b_filter = isset($_GET['b_filter']) && $_GET['b_filter'] !== 'all' ? (int)$_GET['b_filter'] : 'all';
+
+$b_sql_t = ($b_filter === 'all') ? "" : " AND t.branch_id = $b_filter";
+$b_sql_e = ($b_filter === 'all') ? "" : " AND e.branch_id = $b_filter"; 
+$b_sql_u = ($b_filter === 'all') ? "" : " AND u.branch_id = $b_filter";
+
+// --- LOGIC ADD EXPENSE (QUICK ADD VIA MODAL) ---
+if(isset($_POST["add_expense"]) && $role == 'admin'){
+    $waktu_exp = !empty($_POST["exp_time"]) ? date('Y-m-d H:i:s', strtotime($_POST["exp_time"])) : date('Y-m-d H:i:s');
+    $cat = trim($_POST["exp_cat"]);
+    $u_id = !empty($_POST["exp_user_id"]) ? (int)$_POST["exp_user_id"] : null;
+    $b_id = (int)$_POST["exp_branch"];
+    $amt = (int)$_POST["exp_amount"];
+    $note = trim($_POST["exp_note"]);
+
+    if(strtolower($cat) == 'makan' && checkDoubleClaimMakan($db, $u_id, $waktu_exp)) {
+        $_SESSION['toast'] = ['type' => 'error', 'msg' => 'Ditolak: Karyawan ini sudah mendapat allowance makan hari ini!'];
+    } else {
+        $db->prepare("INSERT INTO expenses (user_id, category, amount, notes, created_at, branch_id) VALUES (?,?,?,?,?,?)")
+           ->execute([$u_id ?: $id, $cat, $amt, $note, $waktu_exp, $b_id]);
+        $_SESSION['toast'] = ['type' => 'success', 'msg' => 'Pengeluaran berhasil dicatat!'];
+    }
+    header("Location: dashboard?b_filter=" . $b_id); exit();
+}
+
+$filter = $_GET['filter'] ?? 'today'; $today = date("Y-m-d");
+if($filter == 'week') { $start_date = date('Y-m-d', strtotime('-7 days')); $end_date = $today; }
+elseif($filter == 'month') { $start_date = date('Y-m-01'); $end_date = date('Y-m-t'); }
+else { $start_date = $today; $end_date = $today; }
+
 if($role == "admin"){
     $kotor = $db->query("SELECT SUM(amount) FROM transactions t WHERE date(t.created_at) >= '$start_date' AND date(t.created_at) <= '$end_date' $b_sql_t")->fetchColumn() ?: 0;
     $cust = $db->query("SELECT COUNT(id) FROM transactions t WHERE date(t.created_at) >= '$start_date' AND date(t.created_at) <= '$end_date' $b_sql_t")->fetchColumn() ?: 0;
-    $total_exp = $db->query("SELECT SUM(amount) FROM expenses WHERE date(created_at) >= '$start_date' AND date(created_at) <= '$end_date' $b_sql_e")->fetchColumn() ?: 0;
-    $bersih_admin = ($kotor * 0.5) - $total_exp;
+    
+    $barber_exp = $db->query("SELECT SUM(amount) FROM expenses e JOIN users u ON e.user_id=u.id WHERE u.role='barber' AND LOWER(e.category)='makan' AND date(e.created_at) >= '$start_date' AND date(e.created_at) <= '$end_date' $b_sql_e")->fetchColumn() ?: 0;
+    $admin_exp = $db->query("SELECT SUM(amount) FROM expenses e JOIN users u ON e.user_id=u.id WHERE (u.role='admin' OR LOWER(e.category)!='makan') AND date(e.created_at) >= '$start_date' AND date(e.created_at) <= '$end_date' $b_sql_e")->fetchColumn() ?: 0;
+    
+    $bersih_admin = (($kotor - $barber_exp) * 0.5) - $admin_exp;
 
-    $capster_stats = $db->query("SELECT u.name, COUNT(t.id) as total, SUM(t.amount) as gross FROM users u LEFT JOIN transactions t ON u.id = t.user_id AND date(t.created_at) >= '$start_date' AND date(t.created_at) <= '$end_date' $b_sql_t WHERE u.role = 'barber' $b_sql_u GROUP BY u.id")->fetchAll();
+    $capster_stats = $db->query("SELECT u.id, u.name, COUNT(t.id) as total, SUM(t.amount) as gross, 
+        (SELECT SUM(amount) FROM expenses e WHERE e.user_id = u.id AND LOWER(e.category)='makan' AND date(e.created_at) >= '$start_date' AND date(e.created_at) <= '$end_date') as exp_user 
+        FROM users u 
+        LEFT JOIN transactions t ON u.id = t.user_id AND date(t.created_at) >= '$start_date' AND date(t.created_at) <= '$end_date' $b_sql_t 
+        WHERE u.role = 'barber' $b_sql_u GROUP BY u.id")->fetchAll();
 } else {
     $st1 = $db->prepare("SELECT SUM(amount) FROM transactions WHERE user_id=? AND date(created_at) >= ? AND date(created_at) <= ?"); 
     $st1->execute([$id, $start_date, $end_date]); $income_gross = $st1->fetchColumn() ?: 0;
     $st2 = $db->prepare("SELECT COUNT(id) FROM transactions WHERE user_id=? AND date(created_at) >= ? AND date(created_at) <= ?"); 
     $st2->execute([$id, $start_date, $end_date]); $cust = $st2->fetchColumn() ?: 0;
-    
-    $st3 = $db->prepare("SELECT SUM(amount) FROM expenses WHERE user_id=? AND category='Makan' AND date(created_at) >= ? AND date(created_at) <= ?");
+    $st3 = $db->prepare("SELECT SUM(amount) FROM expenses WHERE user_id=? AND LOWER(category)='makan' AND date(created_at) >= ? AND date(created_at) <= ?");
     $st3->execute([$id, $start_date, $end_date]); $my_meals = $st3->fetchColumn() ?: 0;
+    $gaji_b_capster = max(0, ($income_gross - $my_meals) * 0.5);
 }
 
-// --- 4. DATA GRAFIK ---
+// =========================================================================
+// FIX LOGIKA CHART: KONDISI TERKUNCI & NET PROFIT AKURAT PER HARI
+// =========================================================================
 $labels = []; $chart_profit = []; $chart_cust = [];
 for ($i = 6; $i >= 0; $i--) {
-    $d = date("Y-m-d", strtotime("-$i days")); $labels[] = date("D", strtotime($d));
-    if($role == "admin") { 
+    $d = date("Y-m-d", strtotime("-$i days")); 
+    $labels[] = date("D", strtotime($d));
+    
+    if($role == 'admin') {
+        // Admin: Net Profit Harian = ((Kotor - Makan Capster) * 50%) - Operasional
         $val = $db->query("SELECT SUM(amount) FROM transactions t WHERE date(t.created_at)='$d' $b_sql_t")->fetchColumn() ?: 0; 
         $c_count = $db->query("SELECT COUNT(id) FROM transactions t WHERE date(t.created_at)='$d' $b_sql_t")->fetchColumn() ?: 0;
-    } else { 
-        $st = $db->prepare("SELECT SUM(amount) FROM transactions WHERE user_id=? AND date(created_at)=?"); 
-        $st->execute([$id, $d]); $val = $st->fetchColumn() ?: 0; 
-        $st_c = $db->prepare("SELECT COUNT(id) FROM transactions WHERE user_id=? AND date(created_at)=?"); 
-        $st_c->execute([$id, $d]); $c_count = $st_c->fetchColumn() ?: 0;
+        
+        $b_exp = $db->query("SELECT SUM(amount) FROM expenses e JOIN users u ON e.user_id=u.id WHERE u.role='barber' AND LOWER(e.category)='makan' AND date(e.created_at)='$d' $b_sql_e")->fetchColumn() ?: 0;
+        $a_exp = $db->query("SELECT SUM(amount) FROM expenses e JOIN users u ON e.user_id=u.id WHERE (u.role='admin' OR LOWER(e.category)!='makan') AND date(e.created_at)='$d' $b_sql_e")->fetchColumn() ?: 0;
+        
+        $chart_profit[] = (($val - $b_exp) * 0.5) - $a_exp;
+        $chart_cust[] = $c_count;
+    } else {
+        // Barber: Gaji Harian = (Kotor - Makan) * 50%. TAPI jika hari itu belum/nggak ambil makan, grafik di-0-kan (Terkunci)
+        $val = $db->query("SELECT SUM(amount) FROM transactions WHERE date(created_at)='$d' AND user_id=$id")->fetchColumn() ?: 0; 
+        $c_count = $db->query("SELECT COUNT(id) FROM transactions WHERE date(created_at)='$d' AND user_id=$id")->fetchColumn() ?: 0;
+        $makan = $db->query("SELECT SUM(amount) FROM expenses WHERE LOWER(category)='makan' AND date(created_at)='$d' AND user_id=$id")->fetchColumn() ?: 0;
+        
+        if($makan > 0) {
+            $chart_profit[] = max(0, ($val - $makan) * 0.5);
+        } else {
+            $chart_profit[] = 0; // Kunci ke 0 karena uang makan belum ditarik
+        }
+        $chart_cust[] = $c_count;
     }
-    $chart_profit[] = $val * 0.5; $chart_cust[] = $c_count;
 } 
 ?>
-<!DOCTYPE html><html><head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <link rel="stylesheet" href="assets/style.css?v=<?=time()?>">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <title>Dashboard</title>
-</head><body>
 
-<div class="mobile-header"><span>BPOS</span><button class="burger-btn" onclick="toggleMenu()">☰</button></div>
-<div class="sidebar" id="sidebar">
-    <h2>BPOS</h2><a href="dashboard.php" class="active">Dashboard</a><a href="transactions.php">Transaksi</a>
-    <?php if($role=="admin"): ?><a href="expenses.php">Pengeluaran</a><a href="settings.php">Settings</a><?php endif; ?>
-    <a href="logout.php" class="logout-link">Logout</a>
-</div>
+<?php if(isset($_SESSION['toast'])): ?>
+    <div class="toast-container" id="toastContainer">
+        <div class="toast toast-<?= $_SESSION['toast']['type'] ?>">
+            <span><?= e($_SESSION['toast']['msg']) ?></span>
+        </div>
+    </div>
+    <?php unset($_SESSION['toast']); ?>
+<?php endif; ?>
 
-<div class="content">
-    <div style="display:flex; justify-content:space-between; flex-wrap:wrap; align-items:center; margin-bottom:20px; gap:10px;">
-        <h1>Halo, <?= $_SESSION["name"] ?></h1>
-        <form method="GET" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+<div class="dash-container">
+    <div class="dash-header">
+        <div>
+            <h1 class="dash-title">Halo, <?= e(ucfirst($role == 'admin' ? 'Admin' : $user_name)) ?></h1>
+        </div>
+        <div class="dash-actions">
+            <form method="GET" class="filter-form">
+                <?php if($role=="admin"): ?>
+                    <select name="b_filter" onchange="this.form.submit()" class="dash-select">
+                        <option value="all" <?= $b_filter==='all'?'selected':'' ?>>🌍 Semua Cabang</option>
+                        <?php foreach($branches as $b) echo "<option value='{$b['id']}' ".($b_filter==$b['id']?'selected':'').">🏠 ".e($b['name'])."</option>"; ?>
+                    </select>
+                <?php endif; ?>
+                <select name="filter" onchange="this.form.submit()" class="dash-select">
+                    <option value="today" <?= $filter=='today'?'selected':'' ?>>Hari Ini</option>
+                    <option value="week" <?= $filter=='week'?'selected':'' ?>>Minggu Ini</option>
+                    <option value="month" <?= $filter=='month'?'selected':'' ?>>Bulan Ini</option>
+                </select>
+            </form>
+            
             <?php if($role=="admin"): ?>
-            <select name="b_filter" onchange="this.form.submit()" style="padding:8px 12px; border-radius:8px; background:#4CAF50; color:#fff; border:none; margin:0; font-weight:bold;">
-                <option value="all" <?= $b_filter=='all'?'selected':'' ?>>🌍 Semua Cabang</option>
-                <?php foreach($branches as $b): ?>
-                    <option value="<?=$b['id']?>" <?= $b_filter==$b['id']?'selected':'' ?>>🏠 <?=$b['name']?></option>
-                <?php endforeach; ?>
-            </select>
+            <div class="action-btns">
+                <button type="button" class="btn-dash btn-primary" onclick="document.getElementById('dlReport').showModal()">📥 Laporan</button>
+                <button type="button" class="btn-dash btn-danger" onclick="document.getElementById('dlExp').showModal()">+ Pengeluaran</button>
+            </div>
             <?php endif; ?>
-
-            <select name="filter" onchange="this.form.submit()" style="padding:8px 12px; border-radius:8px; background:#252525; color:#fff; border:1px solid #444; margin:0;">
-                <option value="today" <?= $filter=='today'?'selected':'' ?>>Hari Ini</option>
-                <option value="week" <?= $filter=='week'?'selected':'' ?>>7 Hari Terakhir</option>
-                <option value="month" <?= $filter=='month'?'selected':'' ?>>Bulan Ini</option>
-            </select>
-        </form>
+        </div>
     </div>
 
     <?php if($role=="admin"): ?>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px;margin-bottom:30px;">
-        <div class="card" style="border-left-color: #4CAF50;">
-            <h3>Cuan Bersih Owner (<?= $label_waktu ?>)</h3>
-            <p style="font-size: 1.8rem; font-weight:bold; color: #4CAF50; margin: 10px 0;">Rp <?= number_format($bersih_admin) ?></p>
-            <p style="font-size: 0.85rem; opacity:0.8;">Setelah dipotong pengeluaran Rp <?= number_format($total_exp) ?></p>
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <h3>Pendapatan Kotor</h3>
+            <p class="val">Rp <?= number_format((float)$kotor) ?></p>
         </div>
-        <div class="card">
+        <div class="kpi-card kpi-highlight">
+            <h3 class="text-primary fw-bold">Pendapatan Bersih</h3>
+            <p class="val text-primary">Rp <?= number_format((float)$bersih_admin) ?></p>
+        </div>
+        <div class="kpi-card">
             <h3>Total Customer</h3>
-            <p style="font-size: 1.8rem; font-weight:bold; margin: 10px 0;"><?= $cust ?></p>
+            <p class="val"><?= $cust ?></p>
         </div>
     </div>
 
-    <div class="card" style="border-left-color: red; margin-bottom: 30px;">
-        <h3 style="color: red; margin-top: 0;">Input Pengeluaran Operasional</h3>
-        <form method="POST" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; align-items: end;">
-            <div>
-                <label style="font-size:0.75rem; color:#ccc;">Pilih Cabang</label>
-                <select name="exp_branch" required style="width:100%!important; margin:0!important; height:35px!important; padding:0 10px!important; border-radius:6px; background:#1a1a1a; color:white; border:1px solid #444;">
-                    <?php foreach($branches as $b) { $sl=($b['id']==$b_filter)?'selected':''; echo "<option value='{$b['id']}' $sl>{$b['name']}</option>"; } ?>
-                </select>
-            </div>
-            <div>
-                <label style="font-size:0.75rem; color: #ccc;">Kategori</label>
-                <input list="cat_options" name="exp_cat" placeholder="Listrik, Wifi..." required style="width:100%!important; margin:0!important; height:35px!important; padding:0 10px!important; border-radius:6px; background:#1a1a1a; color:white; border:1px solid #444;">
-                <datalist id="cat_options"><option value="Listrik"><option value="Wifi"><option value="Alat Cukur"><option value="Iuran RT"></datalist>
-            </div>
-            <div>
-                <label style="font-size:0.75rem; color: #ccc;">Jumlah (Rp)</label>
-                <input type="number" name="exp_amount" required style="width:100%!important; margin:0!important; height:35px!important; padding:0 10px!important; border-radius:6px; background:#1a1a1a; color:white; border:1px solid #444;">
-            </div>
-            <div>
-                <label style="font-size:0.75rem; color: #ccc;">Catatan</label>
-                <input type="text" name="exp_note" placeholder="Ket..." style="width:100%!important; margin:0!important; height:35px!important; padding:0 10px!important; border-radius:6px; background:#1a1a1a; color:white; border:1px solid #444;">
-            </div>
-            <button name="add_expense" style="background: red !important; height: 35px !important; padding: 0 !important; border-radius: 6px; font-weight: bold; color: white;">Simpan</button>
-        </form>
+    <div class="kpi-card mb-25">
+        <h3>Tren Pendapatan & Customer</h3>
+        <div class="chart-container"><canvas id="chart"></canvas></div>
     </div>
 
-    <div class="card" style="border-left-color:#4CAF50; margin-bottom: 30px; overflow: hidden;">
-        <h3 style="margin-top:0; color:#4CAF50;">Export Rekap Excel <?= ($b_filter=='all')?'':'(Per Cabang)' ?></h3>
-        <form method="GET" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; align-items: end;">
-            <input type="hidden" name="export" value="excel">
-            <input type="hidden" name="b_filter" value="<?= $b_filter ?>">
-            <div style="width: 100%;">
-                <label style="font-size:0.75rem; opacity:0.8;">Dari Tanggal</label>
-                <input type="date" name="start" value="<?= date('Y-m-01') ?>" required style="width: 100% !important; height: 40px; border-radius: 8px;">
-            </div>
-            <div style="width: 100%;">
-                <label style="font-size:0.75rem; opacity:0.8;">Sampai Tanggal</label>
-                <input type="date" name="end" value="<?= date('Y-m-d') ?>" required style="width: 100% !important; height: 40px; border-radius: 8px;">
-            </div>
-            <button type="submit" style="background:#4CAF50 !important; height: 40px; font-weight: bold; border-radius: 8px; border:none; color:white;">📥 Download</button>
-        </form>
-    </div>
-    
-    <div style="display:grid;grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));gap:20px;">
-        <div class="card" style="overflow:hidden;"><canvas id="chart"></canvas></div>
-        <div class="card" style="overflow-x:auto;">
-            <h3>Detail Capster</h3>
-            <table style="font-size:0.85rem; width:100%;">
-                <thead><tr><th>Nama</th><th>Cust</th><th>Kotor</th><th>Bersih</th></tr></thead>
+    <div class="kpi-card">
+        <h3>Performa Capster</h3>
+        <div class="table-wrap">
+            <table class="dash-table">
+                <thead><tr><th>Nama</th><th class="num-col">Cust</th><th class="num-col">Kotor</th><th class="num-col">Makan</th><th class="num-col text-accent">Net (50%)</th></tr></thead>
                 <tbody>
-                    <?php foreach($capster_stats as $cs) echo "<tr><td>{$cs["name"]}</td><td>".($cs["total"])."</td><td>".number_format($cs["gross"])."</td><td style='color:var(--accent); font-weight:bold;'>".number_format($cs["gross"]*0.5)."</td></tr>"; ?>
+                    <?php foreach($capster_stats as $cs){ 
+                        $gv = $cs["gross"] ?? 0; $ex = $cs["exp_user"] ?? 0; $net = ($gv - $ex) * 0.5;
+                        echo "<tr><td>".e($cs["name"])."</td><td class='num-col'>".($cs["total"] ?: 0)."</td><td class='num-col'>".number_format((float)$gv)."</td><td class='num-col text-danger'>-".number_format((float)$ex)."</td><td class='num-col text-accent fw-bold'>".number_format((float)$net)."</td></tr>";
+                    } ?>
                 </tbody>
             </table>
         </div>
     </div>
 
-    <?php else: ?>
-    <div style="display:grid;grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));gap:20px;margin-bottom:30px;">
-        <div class="card"><h3>Customer</h3><p style="font-size: 2rem; font-weight:bold; margin:10px 0;"><?= $cust ?></p></div>
-        <div class="card" style="border-left-color:var(--primary)">
-            <h3>Gaji Anda (Bersih 50%)</h3>
-            <p style="font-size: 1.5rem; font-weight:bold; color:var(--primary); margin: 5px 0;">Rp <?= number_format(($income_gross ?: 0) * 0.5) ?></p>
-            <p style="font-size: 0.85rem; opacity:0.8;">Uang Makan yang sudah diambil: Rp <?= number_format($my_meals) ?></p>
+    <dialog id="dlExp">
+        <h2 class="dialog-title text-danger">Input Pengeluaran Cepat</h2>
+        <form method="POST">
+            <div class="fg">
+                <label>Cabang</label>
+                <select name="exp_branch" id="exp_branch" onchange="filterExpCapster()" required>
+                    <?php foreach($branches as $b) echo "<option value='{$b['id']}' ".($b['id']==$b_filter?'selected':'').">".e($b['name'])."</option>"; ?>
+                </select>
+            </div>
+            <div class="fg">
+                <label>Untuk Siapa?</label>
+                <select name="exp_user_id" id="exp_user_id">
+                    <option value="">-- Operasional Admin --</option>
+                </select>
+            </div>
+            <div class="form-grid-2 mb-0">
+                <div class="fg">
+                    <label>Kategori</label>
+                    <input list="cats" name="exp_cat" placeholder="Ketik/Pilih Kategori" required>
+                    <datalist id="cats"><option value="Makan"><option value="Operasional"><option value="Peralatan"><option value="Lainnya"></datalist>
+                </div>
+                <div class="fg">
+                    <label>Jumlah (Rp)</label>
+                    <input type="number" name="exp_amount" placeholder="Cth: 50000" required>
+                </div>
+            </div>
+            <div class="fg">
+                <label>Catatan (Opsional)</label>
+                <input type="text" name="exp_note" placeholder="Rincian pengeluaran...">
+            </div>
+            <div class="dialog-actions">
+                <button type="button" class="btn-dash btn-secondary" onclick="this.closest('dialog').close()">Batal</button>
+                <button type="submit" name="add_expense" class="btn-dash btn-danger">Simpan Data</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="dlReport">
+        <h2 class="dialog-title text-primary">Export Laporan Periode</h2>
+        <form method="GET" target="_blank">
+            <input type="hidden" name="b_filter" value="<?= e($b_filter) ?>">
+            <div class="form-grid-2 mb-0">
+                <div class="fg"><label>Dari Tanggal</label><input type="date" name="start" value="<?= date('Y-m-01') ?>" required></div>
+                <div class="fg"><label>Sampai Tanggal</label><input type="date" name="end" value="<?= date('Y-m-d') ?>" required></div>
+            </div>
+            <div class="dialog-actions">
+                <button type="button" class="btn-dash btn-secondary" onclick="this.closest('dialog').close()">Batal</button>
+                <button type="submit" name="view" value="print" class="btn-dash btn-primary">PDF / Print</button>
+                <button type="submit" name="export" value="excel" class="btn-dash btn-accent">Excel</button>
+            </div>
+        </form>
+    </dialog>
+
+    <?php else: // BARBER VIEW ?>
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <h3>Total Customer</h3>
+            <p class="val"><?= $cust ?></p>
+        </div>
+        <div class="kpi-card kpi-highlight-accent">
+            <h3>Pendapatan</h3>
+            <?php if($my_meals > 0): ?>
+                <p class="val text-accent">Rp <?= number_format((float)$gaji_b_capster) ?></p>
+            <?php else: ?>
+                <p class="text-danger fw-bold mt-8 mb-0" style="font-size:1.2rem;">⚠️ Terkunci</p>
+                <small class="text-danger d-block mt-8 fs-sm">*Ambil uang makan di menu Transaksi terlebih dahulu.</small>
+            <?php endif; ?>
         </div>
     </div>
-    <div class="card" style="overflow:hidden;"><canvas id="chart"></canvas></div>
+    <div class="kpi-card mb-25">
+        <h3>Tren Performa</h3>
+        <div class="chart-container"><canvas id="chart"></canvas></div>
+    </div>
     <?php endif; ?>
-</div>
 
+</div> 
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-new Chart(document.getElementById("chart"),{
-    type:"line",
-    data:{
-        labels:<?= json_encode($labels) ?>,
-        datasets:[
-            { label: "Profit (Rp)", data: <?= json_encode($chart_profit) ?>, borderColor: "#bb86fc", backgroundColor: "rgba(187,134,252,0.1)", fill: true, tension: 0.3, yAxisID: 'y' },
-            { label: "Customer", data: <?= json_encode($chart_cust) ?>, borderColor: "#03dac6", backgroundColor: "rgba(3,218,198,0.1)", fill: true, tension: 0.3, yAxisID: 'y1' }
+document.addEventListener("DOMContentLoaded", function() {
+    const toast = document.getElementById('toastContainer');
+    if (toast) {
+        setTimeout(() => {
+            toast.firstElementChild.classList.add('hiding');
+            setTimeout(() => toast.remove(), 300); 
+        }, 3500);
+    }
+    filterExpCapster();
+});
+
+const allCapsters = <?= json_encode($all_c_data) ?>;
+function filterExpCapster() {
+    const bId = document.getElementById('exp_branch')?.value;
+    const sel = document.getElementById('exp_user_id');
+    if(!sel || !bId) return;
+    sel.innerHTML = '<option value="">-- Operasional Admin --</option>';
+    allCapsters.filter(c => c.branch_id == bId).forEach(c => { sel.innerHTML += `<option value="${c.id}">Capster: ${c.name}</option>`; });
+}
+
+new Chart(document.getElementById("chart"), {
+    type: 'line',
+    data: {
+        labels: <?= json_encode($labels) ?>,
+        datasets: [
+            { label: 'Profit (Rp)', data: <?= json_encode($chart_profit) ?>, borderColor: '#bb86fc', tension: 0.4, fill: true, backgroundColor: 'rgba(187,134,252,0.1)', yAxisID: 'y', pointRadius: 3 },
+            { label: 'Customer', data: <?= json_encode($chart_cust) ?>, borderColor: '#03dac6', tension: 0.4, yAxisID: 'y1', pointRadius: 3 }
         ]
     },
-    options:{
-        responsive: true, maintainAspectRatio: false, 
-        plugins:{legend:{labels:{color:"#e0e0e0"}}},
-        scales:{
-            x: { 
-                ticks: { color: "#e0e0e0", font: {size: 12} }, 
-                grid: { color: '#444' } 
-            },
-            y: { 
-                type: 'linear', display: true, position: 'left', 
-                ticks: { color: "#bb86fc" }, 
-                grid: { color: '#444' } 
-            },
-            y1: { 
-                type: 'linear', display: true, position: 'right', 
-                ticks: { color: "#03dac6", stepSize: 1 }, 
-                grid: { drawOnChartArea: false } 
-            }
-        }
-    }
-});
-function toggleMenu() { document.getElementById('sidebar').classList.toggle('active'); }
-document.addEventListener('click', function(event) {
-    var sidebar = document.getElementById('sidebar');
-    var burger = document.querySelector('.burger-btn');
-    if (sidebar.classList.contains('active') && !sidebar.contains(event.target) && !burger.contains(event.target)) {
-        sidebar.classList.remove('active');
+    options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+            y: { position: 'left', grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888', maxTicksLimit: 5 } },
+            y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { stepSize: 1, color: '#03dac6' } },
+            x: { grid: { display: false }, ticks: { color: '#888' } }
+        },
+        plugins: { legend: { position: 'top', labels: { color: '#eee', boxWidth: 10, usePointStyle: true } } }
     }
 });
 </script>
-</body></html>
+
+<?php include "includes/footer.php"; ?>
