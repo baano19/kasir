@@ -77,16 +77,21 @@
     // ---- Online/Offline indicator (Ping-based, bukan navigator.onLine) ----
     // navigator.onLine tidak reliable di Android/mode pesawat
     // Solusi: fetch request kecil ke server setiap 10 detik
-    let isActuallyOnline = true;
+    let isActuallyOnline = false; // Default FALSE — tunggu ping beneran dulu
 
     async function pingServer() {
         const indicator = document.getElementById('online-indicator');
+        // Tampilkan status 'memeriksa' sebelum ping selesai
+        if (indicator && indicator.textContent === '🟢 Online' && !isActuallyOnline) {
+            indicator.textContent = '🔄 Memeriksa...';
+            indicator.style.color = '#888';
+        }
         try {
-            // Fetch favicon/manifest dengan cache-bust biar nggak kena cache SW
+            // _ping= di query string → SW selalu bypass ke network beneran
             const res = await fetch('/manifest.json?_ping=' + Date.now(), {
                 method: 'HEAD',
                 cache: 'no-store',
-                signal: AbortSignal.timeout(4000) // timeout 4 detik
+                signal: AbortSignal.timeout(4000)
             });
             if (res.ok) {
                 isActuallyOnline = true;
@@ -104,8 +109,15 @@
         }
     }
 
-    // Ping saat halaman load & setiap 10 detik
-    document.addEventListener('DOMContentLoaded', pingServer);
+    // Set indikator ke 'Memeriksa...' saat halaman baru load
+    document.addEventListener('DOMContentLoaded', function() {
+        const indicator = document.getElementById('online-indicator');
+        if (indicator) {
+            indicator.textContent = '🔄 Memeriksa...';
+            indicator.style.color = '#888';
+        }
+        pingServer(); // Langsung ping, ganti status sesuai hasil
+    });
     setInterval(pingServer, 10000);
 
     // ---- Guard: Blokir submit form saat offline ----

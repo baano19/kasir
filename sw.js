@@ -23,11 +23,12 @@ const STATIC_ASSETS = [
 // Halaman fallback saat offline & halaman tidak ada di cache
 const OFFLINE_FALLBACK = '/offline';
 
-// URL yang TIDAK boleh di-cache (selalu fetch langsung)
+// URL yang TIDAK boleh di-cache (selalu fetch langsung ke network)
 const BYPASS_CACHE = [
   '/logout',
   '/reset_data',
   '/api/',
+  '_ping=',   // Request ping untuk cek status online — HARUS ke network beneran
 ];
 
 // ============================================================
@@ -73,12 +74,13 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Bypass: jangan cache POST requests & URL tertentu
+  // Bypass: jangan cache POST requests & URL tertentu (termasuk ping)
   if (
     event.request.method !== 'GET' ||
-    BYPASS_CACHE.some((path) => url.pathname.startsWith(path))
+    BYPASS_CACHE.some((pattern) => url.href.includes(pattern))
   ) {
-    event.respondWith(fetch(event.request));
+    // Langsung ke network, jangan lewat cache sama sekali
+    event.respondWith(fetch(event.request).catch(() => new Response('', { status: 503 })));
     return;
   }
 
