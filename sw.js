@@ -119,23 +119,31 @@ async function cacheFirst(request) {
 async function networkFirst(request) {
   const cache = await caches.open(DYNAMIC_CACHE);
 
-  try {
-    const response = await fetch(request);
+  // Fungsi timeout biar gak nunggu internet kelamaan (3 detik)
+  const timeout = (ms) => new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('Timeout')), ms)
+  );
 
-    // Simpan response ke dynamic cache untuk offline fallback
+  try {
+    // Balapan: fetch vs timeout 3 detik
+    const response = await Promise.race([
+      fetch(request),
+      timeout(3000)
+    ]);
+
     if (response.ok) {
       cache.put(request, response.clone());
     }
     return response;
-  } catch {
-    // Offline! Coba dari cache
+  } catch (err) {
+    // Jika internet mati ATAU lemot (> 3 detik), ambil dari cache
     const cached = await cache.match(request);
     if (cached) {
-      console.log('[SW] Offline — Melayani dari cache:', request.url);
+      console.log('[SW] Melayani dari cache (offline/lemot):', request.url);
       return cached;
     }
 
-    // Tidak ada di cache sama sekali → tampilkan halaman offline
+    // Jika benar-benar tidak ada di cache sama sekali
     const staticCached = await caches.match(OFFLINE_FALLBACK);
     return staticCached || new Response(
       buildOfflinePage(),
