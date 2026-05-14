@@ -1,16 +1,43 @@
 RewriteEngine On
 
+# ============================================================
+# PWA: Pastikan sw.js & manifest.json bisa diakses langsung
+# ============================================================
+RewriteRule ^sw\.js$ sw.js [L]
+RewriteRule ^manifest\.json$ manifest.json [L]
+
+# PWA: MIME type yang benar untuk Service Worker & Manifest
+<IfModule mod_headers.c>
+    <FilesMatch "sw\.js$">
+        Header set Content-Type "application/javascript"
+        Header set Service-Worker-Allowed "/"
+    </FilesMatch>
+    <FilesMatch "manifest\.json$">
+        Header set Content-Type "application/manifest+json"
+    </FilesMatch>
+</IfModule>
+
+# ============================================================
 # 1. Paksa hapus .php dari URL (Redirect)
+# ============================================================
 RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s/+(.+)\.php[\s?] [NC]
 RewriteRule ^ /%1 [R=301,L]
 
+# ============================================================
 # 2. Kasih izin akses file .php secara internal
+# ============================================================
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteCond %{REQUEST_FILENAME}\.php -f
 RewriteRule ^([^\.]+)$ $1.php [NC,L]
 
-# 3. Proteksi Database
+# ============================================================
+# 3. Proteksi file sensitif
+# ============================================================
 <Files "*.db">
+    Order allow,deny
+    Deny from all
+</Files>
+<Files "make_icons.ps1">
     Order allow,deny
     Deny from all
 </Files>

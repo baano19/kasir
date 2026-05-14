@@ -496,3 +496,107 @@ body.login-page { display: flex !important; justify-content: center !important; 
     }
     .grid-tr.gt-expenses .ghost-input { padding: 10px 8px !important; }
 }
+
+/* ==========================================================================
+   PWA — INSTALL BANNER & ONLINE INDICATOR
+   ========================================================================== */
+
+/* Install Banner (muncul dari bawah) */
+#pwa-install-banner {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 10000;
+    background: #1a1a1a;
+    border-top: 1px solid rgba(187,134,252,0.3);
+    padding: 14px 20px;
+    box-shadow: 0 -8px 30px rgba(0,0,0,0.5);
+    animation: slideUpBanner 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+@keyframes slideUpBanner {
+    from { transform: translateY(100%); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+}
+.pwa-banner-content {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    max-width: 600px;
+    margin: 0 auto;
+}
+.pwa-banner-icon {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+.pwa-banner-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.pwa-banner-text strong {
+    color: #fff;
+    font-size: 0.95rem;
+}
+.pwa-banner-text span {
+    color: #888;
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+.pwa-banner-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+.pwa-btn-install {
+    background: var(--primary) !important;
+    color: #000 !important;
+    border: none !important;
+    padding: 8px 18px !important;
+    border-radius: 8px !important;
+    font-weight: 700 !important;
+    font-size: 0.88rem !important;
+    cursor: pointer !important;
+    width: auto !important;
+    white-space: nowrap;
+}
+.pwa-btn-dismiss {
+    background: transparent !important;
+    color: #888 !important;
+    border: 1px solid #444 !important;
+    padding: 8px 12px !important;
+    border-radius: 8px !important;
+    font-size: 0.85rem !important;
+    cursor: pointer !important;
+    width: auto !important;
+    line-height: 1 !important;
+}
+.pwa-btn-dismiss:hover { color: #fff !important; border-color: #666 !important; }
+
+/* Online/Offline indicator di sidebar */
+#online-indicator {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: 6px 10px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 6px;
+    border: 1px solid #2a2a2a;
+    margin-bottom: 16px;
+    transition: color 0.3s ease;
+}
+
+/* Update banner (muncul dari bawah saat ada versi baru SW) */
+#pwa-update-banner {
+    animation: slideUpBanner 0.4s ease forwards;
+}
+
+/* Responsive: di HP banner jadi lebih compact */
+@media (max-width: 480px) {
+    .pwa-banner-content { gap: 10px; }
+    .pwa-banner-text span { display: none; }
+    .pwa-banner-text strong { font-size: 0.88rem; }
+    .pwa-btn-install { padding: 8px 14px !important; }
+}

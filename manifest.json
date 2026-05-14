@@ -1,0 +1,39 @@
+{
+  "name": "BPOS - Barbershop POS",
+  "short_name": "BPOS",
+  "description": "Sistem kasir barbershop offline-ready",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#121212",
+  "theme_color": "#bb86fc",
+  "lang": "id",
+  "icons": [
+    {
+      "src": "assets/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Transaksi Baru",
+      "url": "/transactions",
+      "description": "Buka halaman transaksi"
+    },
+    {
+      "name": "Dashboard",
+      "url": "/dashboard",
+      "description": "Lihat ringkasan hari ini"
+    }
+  ],
+  "categories": ["business", "finance", "productivity"]
+}
