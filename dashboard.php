@@ -93,9 +93,27 @@ if ($is_excel || $is_print) {
         foreach($services as $srv) echo "<th class='head-table'>$srv</th>";
         echo "<th class='head-table'>CUST</th><th class='head-table text-right'>KOTOR</th><th class='head-table text-right'>MAKAN</th><th class='head-table text-right'>NET (50%)</th></tr></thead>";
         
-        $grand_total_gross = 0; $total_cust_all = 0;
-        $dates_q = $db->prepare("SELECT DISTINCT date(t.created_at) as tgl FROM transactions t WHERE date(t.created_at) >= ? AND date(t.created_at) <= ? $b_sql_t ORDER BY tgl ASC");
-        $dates_q->execute([$start, $end]); $dates = $dates_q->fetchAll();
+        $grand_total_gross = 0; $total_cust_all = 0; $total_net_all_barbers = 0; $total_exp_all_barbers = 0;
+
+        // Ambil SEMUA tanggal yang ada transaksi ATAU pengeluaran di cabang tsb
+        $dates_q = $db->prepare("
+            SELECT DISTINCT tgl FROM (
+                SELECT date(created_at) as tgl FROM transactions t WHERE date(created_at) >= ? AND date(created_at) <= ? $b_sql_t
+                UNION
+                SELECT date(created_at) as tgl FROM expenses e WHERE date(created_at) >= ? AND date(created_at) <= ? $b_sql_e
+            ) ORDER BY tgl ASC");
+        $dates_q->execute([$start, $end, $start, $end]); $dates = $dates_q->fetchAll();
+
+        // Ambil daftar capster yang PERNAH ada di cabang ini (transaksi atau makan) pada periode tsb
+        $capsters_active_q = $db->prepare("
+            SELECT DISTINCT u.id, u.name FROM users u
+            WHERE u.role='barber' AND (
+                u.id IN (SELECT user_id FROM transactions t WHERE date(created_at) >= ? AND date(created_at) <= ? $b_sql_t)
+                OR
+                u.id IN (SELECT user_id FROM expenses e WHERE date(created_at) >= ? AND date(created_at) <= ? $b_sql_e)
+            ) ORDER BY u.name ASC");
+        $capsters_active_q->execute([$start, $end, $start, $end]);
+        $capsters_active = $capsters_active_q->fetchAll();
 
         if(count($dates) == 0) {
             echo "<tr><td colspan='$total_cols'>Tidak ada data transaksi.</td></tr>";
@@ -105,24 +123,23 @@ if ($is_excel || $is_print) {
                 $day_cust = 0; $day_gross = 0; $day_exp = 0; $day_net = 0;
 
                 echo "<tr><td colspan='$total_cols' class='date-row'>Tanggal: " . date('d M Y', strtotime($tgl)) . "</td></tr>";
-                $capsters = $db->query("SELECT u.id, u.name, b.name as bname FROM users u LEFT JOIN branches b ON u.branch_id=b.id WHERE u.role='barber' $b_sql_u ORDER BY b.id, u.name ASC")->fetchAll();
 
-                foreach($capsters as $c) {
+                foreach($capsters_active as $c) {
                     $cid = $c['id'];
                     $cek_tr = $db->prepare("SELECT COUNT(id) as cust, SUM(amount) as gross FROM transactions t WHERE t.user_id=? AND date(t.created_at)=? $b_sql_t");
                     $cek_tr->execute([$cid, $tgl]); $tr_data = $cek_tr->fetch();
                     $cust_count = $tr_data['cust'] ?: 0;
                     $gross = $tr_data['gross'] ?: 0;
                     
-                    $cek_exp = $db->prepare("SELECT SUM(amount) FROM expenses WHERE user_id=? AND LOWER(category)='makan' AND date(created_at)=?");
+                    $cek_exp = $db->prepare("SELECT SUM(amount) FROM expenses e WHERE e.user_id=? AND LOWER(e.category)='makan' AND date(e.created_at)=? $b_sql_e");
                     $cek_exp->execute([$cid, $tgl]); $exp_user = $cek_exp->fetchColumn() ?: 0;
 
-                    $net_user = ($gross - $exp_user) * 0.5;
-                    if($net_user < 0) $net_user = 0;
+                    $net_user = max(0, ($gross - $exp_user) * 0.5);
 
                     if($cust_count > 0 || $exp_user > 0) {
                         $day_cust += $cust_count; $day_gross += $gross; $day_exp += $exp_user; $day_net += $net_user;
                         $grand_total_gross += $gross; $total_cust_all += $cust_count;
+                        $total_exp_all_barbers += $exp_user; $total_net_all_barbers += $net_user;
 
                         echo "<tr><td class='text-left'>{$c['name']}</td>";
                         foreach($services as $srv) {
@@ -140,26 +157,23 @@ if ($is_excel || $is_print) {
             }
         }
 
-        $barber_exp_q = $db->prepare("SELECT SUM(amount) FROM expenses e JOIN users u ON e.user_id=u.id WHERE u.role='barber' AND LOWER(e.category)='makan' AND date(e.created_at) >= ? AND date(e.created_at) <= ? $b_sql_e");
-        $barber_exp_q->execute([$start, $end]); $barber_exp = $barber_exp_q->fetchColumn() ?: 0;
-        
         $admin_exp_q = $db->prepare("SELECT SUM(amount) FROM expenses e JOIN users u ON e.user_id=u.id WHERE (u.role='admin' OR LOWER(e.category)!='makan') AND date(e.created_at) >= ? AND date(e.created_at) <= ? $b_sql_e");
         $admin_exp_q->execute([$start, $end]); $admin_exp = $admin_exp_q->fetchColumn() ?: 0;
 
-        $subtotal = $grand_total_gross - $barber_exp;
-        $jatah_owner = $subtotal * 0.5;
+        // Formula: Bersih Owner = Total Kotor - Total Makan Capster - Total Gaji Capster - Operasional
+        $jatah_owner = $grand_total_gross - $total_exp_all_barbers - $total_net_all_barbers;
         $bersih_admin = $jatah_owner - $admin_exp;
 
-        echo "<tr class='rekap-box'><td colspan='".(count($services)+1)."' class='text-left'>Total pendapatan Periode: $start_fmt - $end_fmt</td><td>$total_cust_all</td><td class='text-right'>".$fmt($grand_total_gross)."</td><td class='text-right text-danger'>-".$fmt($barber_exp)."</td><td class='text-right'>".$fmt($jatah_owner)."</td></tr>";
+        echo "<tr class='rekap-box'><td colspan='".(count($services)+1)."' class='text-left'>Total pendapatan Periode: $start_fmt - $end_fmt</td><td>$total_cust_all</td><td class='text-right'>".$fmt($grand_total_gross)."</td><td class='text-right text-danger'>-".$fmt($total_exp_all_barbers)."</td><td class='text-right'>".$fmt($total_net_all_barbers)."</td></tr>";
         echo "</table><br>";
 
         echo "<div class='rincian-wrapper'>";
         echo "<table>";
         echo "<tr><th colspan='2' class='head-table text-left'>RINCIAN PERHITUNGAN PENDAPATAN</th></tr>";
         echo "<tr><td class='text-left'>Total Pendapatan Kotor</td><td class='text-right'>".$fmt($grand_total_gross)."</td></tr>";
-        echo "<tr><td class='text-left'>Total Uang Makan Capster</td><td class='text-right text-danger'>- ".$fmt($barber_exp)."</td></tr>";
-        echo "<tr class='rekap-box'><td class='text-left'>SUBTOTAL (Kotor - Makan)</td><td class='text-right'>".$fmt($subtotal)."</td></tr>";
-        echo "<tr><td class='text-left'>Pendapatan Owner (50% dari Subtotal)</td><td class='text-right'>".$fmt($jatah_owner)."</td></tr>";
+        echo "<tr><td class='text-left'>Total Uang Makan Capster</td><td class='text-right text-danger'>- ".$fmt($total_exp_all_barbers)."</td></tr>";
+        echo "<tr><td class='text-left'>Total Gaji Capster (Net 50%)</td><td class='text-right text-danger'>- ".$fmt($total_net_all_barbers)."</td></tr>";
+        echo "<tr class='rekap-box'><td class='text-left'>PENDAPATAN OWNER (Kotor - Makan - Gaji)</td><td class='text-right'>".$fmt($jatah_owner)."</td></tr>";
         echo "<tr><td class='text-left'>Total Pengeluaran Operasional</td><td class='text-right text-danger'>- ".$fmt($admin_exp)."</td></tr>";
         echo "<tr class='bg-teal'><td class='text-left'>PENDAPATAN BERSIH AKHIR</td><td class='text-right'>".$fmt($bersih_admin)."</td></tr>";
         echo "</table></div><br>";
@@ -276,16 +290,31 @@ if($role == "admin"){
     $kotor = $db->query("SELECT SUM(amount) FROM transactions t WHERE date(t.created_at) >= '$start_date' AND date(t.created_at) <= '$end_date' $b_sql_t")->fetchColumn() ?: 0;
     $cust = $db->query("SELECT COUNT(id) FROM transactions t WHERE date(t.created_at) >= '$start_date' AND date(t.created_at) <= '$end_date' $b_sql_t")->fetchColumn() ?: 0;
     
-    $barber_exp = $db->query("SELECT SUM(amount) FROM expenses e JOIN users u ON e.user_id=u.id WHERE u.role='barber' AND LOWER(e.category)='makan' AND date(e.created_at) >= '$start_date' AND date(e.created_at) <= '$end_date' $b_sql_e")->fetchColumn() ?: 0;
     $admin_exp = $db->query("SELECT SUM(amount) FROM expenses e JOIN users u ON e.user_id=u.id WHERE (u.role='admin' OR LOWER(e.category)!='makan') AND date(e.created_at) >= '$start_date' AND date(e.created_at) <= '$end_date' $b_sql_e")->fetchColumn() ?: 0;
     
-    $bersih_admin = (($kotor - $barber_exp) * 0.5) - $admin_exp;
-
-    $capster_stats = $db->query("SELECT u.id, u.name, COUNT(t.id) as total, SUM(t.amount) as gross, 
-        (SELECT SUM(amount) FROM expenses e WHERE e.user_id = u.id AND LOWER(e.category)='makan' AND date(e.created_at) >= '$start_date' AND date(e.created_at) <= '$end_date') as exp_user 
+    // Performa Capster yang robust: cari siapa saja yang ada aktivitas di cabang/periode tsb
+    $capster_stats = $db->query("SELECT u.id, u.name,
+        (SELECT COUNT(id) FROM transactions t WHERE t.user_id = u.id AND date(t.created_at) >= '$start_date' AND date(t.created_at) <= '$end_date' $b_sql_t) as total,
+        (SELECT SUM(amount) FROM transactions t WHERE t.user_id = u.id AND date(t.created_at) >= '$start_date' AND date(t.created_at) <= '$end_date' $b_sql_t) as gross,
+        (SELECT SUM(amount) FROM expenses e WHERE e.user_id = u.id AND LOWER(e.category)='makan' AND date(e.created_at) >= '$start_date' AND date(e.created_at) <= '$end_date' $b_sql_e) as exp_user
         FROM users u 
-        LEFT JOIN transactions t ON u.id = t.user_id AND date(t.created_at) >= '$start_date' AND date(t.created_at) <= '$end_date' $b_sql_t 
-        WHERE u.role = 'barber' $b_sql_u GROUP BY u.id")->fetchAll();
+        WHERE u.role = 'barber' AND (
+            u.id IN (SELECT user_id FROM transactions t WHERE date(t.created_at) >= '$start_date' AND date(t.created_at) <= '$end_date' $b_sql_t)
+            OR
+            u.id IN (SELECT user_id FROM expenses e WHERE e.user_id = u.id AND LOWER(e.category)='makan' AND date(e.created_at) >= '$start_date' AND date(e.created_at) <= '$end_date' $b_sql_e)
+        )
+        GROUP BY u.id ORDER BY u.name ASC")->fetchAll();
+
+    $total_net_barbers = 0;
+    $total_makan_barbers = 0;
+    foreach($capster_stats as $cs) {
+        $gv = $cs["gross"] ?? 0; $ex = $cs["exp_user"] ?? 0;
+        $net = max(0, ($gv - $ex) * 0.5);
+        $total_net_barbers += $net;
+        $total_makan_barbers += $ex;
+    }
+
+    $bersih_admin = ($kotor - $total_makan_barbers - $total_net_barbers) - $admin_exp;
 } else {
     $st1 = $db->prepare("SELECT SUM(amount) FROM transactions WHERE user_id=? AND date(created_at) >= ? AND date(created_at) <= ?"); 
     $st1->execute([$id, $start_date, $end_date]); $income_gross = $st1->fetchColumn() ?: 0;
@@ -305,14 +334,22 @@ for ($i = 6; $i >= 0; $i--) {
     $labels[] = date("D", strtotime($d));
     
     if($role == 'admin') {
-        // Admin: Net Profit Harian = ((Kotor - Makan Capster) * 50%) - Operasional
+        // Admin: Net Profit Harian = (Kotor - Makan Capster - Gaji Capster) - Operasional
         $val = $db->query("SELECT SUM(amount) FROM transactions t WHERE date(t.created_at)='$d' $b_sql_t")->fetchColumn() ?: 0; 
         $c_count = $db->query("SELECT COUNT(id) FROM transactions t WHERE date(t.created_at)='$d' $b_sql_t")->fetchColumn() ?: 0;
         
-        $b_exp = $db->query("SELECT SUM(amount) FROM expenses e JOIN users u ON e.user_id=u.id WHERE u.role='barber' AND LOWER(e.category)='makan' AND date(e.created_at)='$d' $b_sql_e")->fetchColumn() ?: 0;
+        $day_barbers = $db->query("SELECT u.id, SUM(t.amount) as gross FROM users u LEFT JOIN transactions t ON u.id=t.user_id AND date(t.created_at)='$d' $b_sql_t WHERE u.role='barber' $b_sql_u GROUP BY u.id")->fetchAll();
+        $day_net_barbers = 0;
+        $day_makan_barbers = 0;
+        foreach($day_barbers as $dbb) {
+            $makan = $db->query("SELECT SUM(amount) FROM expenses e WHERE user_id={$dbb['id']} AND LOWER(category)='makan' AND date(created_at)='$d' $b_sql_e")->fetchColumn() ?: 0;
+            $day_net_barbers += max(0, (($dbb['gross'] ?: 0) - $makan) * 0.5);
+            $day_makan_barbers += $makan;
+        }
+
         $a_exp = $db->query("SELECT SUM(amount) FROM expenses e JOIN users u ON e.user_id=u.id WHERE (u.role='admin' OR LOWER(e.category)!='makan') AND date(e.created_at)='$d' $b_sql_e")->fetchColumn() ?: 0;
         
-        $chart_profit[] = (($val - $b_exp) * 0.5) - $a_exp;
+        $chart_profit[] = ($val - $day_makan_barbers - $day_net_barbers) - $a_exp;
         $chart_cust[] = $c_count;
     } else {
         // Barber: Gaji Harian = (Kotor - Makan) * 50%. TAPI jika hari itu belum/nggak ambil makan, grafik di-0-kan (Terkunci)
@@ -396,7 +433,7 @@ for ($i = 6; $i >= 0; $i--) {
                 <thead><tr><th>Nama</th><th class="num-col">Cust</th><th class="num-col">Kotor</th><th class="num-col">Makan</th><th class="num-col text-accent">Net (50%)</th></tr></thead>
                 <tbody>
                     <?php foreach($capster_stats as $cs){ 
-                        $gv = $cs["gross"] ?? 0; $ex = $cs["exp_user"] ?? 0; $net = ($gv - $ex) * 0.5;
+                        $gv = $cs["gross"] ?? 0; $ex = $cs["exp_user"] ?? 0; $net = max(0, ($gv - $ex) * 0.5);
                         echo "<tr><td>".e($cs["name"])."</td><td class='num-col'>".($cs["total"] ?: 0)."</td><td class='num-col'>".number_format((float)$gv)."</td><td class='num-col text-danger'>-".number_format((float)$ex)."</td><td class='num-col text-accent fw-bold'>".number_format((float)$net)."</td></tr>";
                     } ?>
                 </tbody>
