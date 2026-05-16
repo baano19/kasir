@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/dashboard_fragment">
+
+    <fragment
+        android:id="@+id/dashboard_fragment"
+        android:name="com.barbershop.pos.presentation.main.DashboardFragment"
+        android:label="Dashboard" />
+
+    <fragment
+        android:id="@+id/transaction_fragment"
+        android:name="com.barbershop.pos.presentation.transaction.TransactionFragment"
+        android:label="Transaksi" />
+
+    <fragment
+        android:id="@+id/expense_fragment"
+        android:name="com.barbershop.pos.presentation.expense.ExpenseFragment"
+        android:label="Pengeluaran" />
+
+</navigation>

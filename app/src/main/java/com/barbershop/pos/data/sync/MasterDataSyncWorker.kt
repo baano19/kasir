@@ -4,41 +4,32 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.barbershop.pos.domain.repository.ExpenseRepository
-import com.barbershop.pos.domain.repository.TransactionRepository
+import com.barbershop.pos.domain.repository.MasterDataRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
 @HiltWorker
-class SyncWorker @AssistedInject constructor(
+class MasterDataSyncWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
-    private val transactionRepository: TransactionRepository,
-    private val expenseRepository: ExpenseRepository
+    private val masterDataRepository: MasterDataRepository
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
         return try {
-            var hasError = false
-
-            val txResult = transactionRepository.syncPendingTransactions()
-            if (txResult.isFailure) hasError = true
-
-            val expResult = expenseRepository.syncPendingExpenses()
-            if (expResult.isFailure) hasError = true
-
-            if (hasError) {
-                if (runAttemptCount < 3) {
+            val result = masterDataRepository.syncMasterData()
+            if (result.isSuccess) {
+                Result.success()
+            } else {
+                if (runAttemptCount < 2) {
                     Result.retry()
                 } else {
                     Result.failure()
                 }
-            } else {
-                Result.success()
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            if (runAttemptCount < 3) {
+            if (runAttemptCount < 2) {
                 Result.retry()
             } else {
                 Result.failure()

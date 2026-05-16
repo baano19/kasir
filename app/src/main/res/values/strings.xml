@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BPOS - Barbershop POS</string>
+    <string name="dashboard">Dashboard</string>
+    <string name="transactions">Transaksi</string>
+    <string name="expenses">Pengeluaran</string>
+
+    <string-array name="expense_categories">
+        <item>operasional</item>
+        <item>makan</item>
+        <item>peralatan</item>
+        <item>lainnya</item>
+    </string-array>
+</resources>
